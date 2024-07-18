@@ -10,7 +10,9 @@ import backoff
 import openai
 
 # FAST_DOWNWARD_ALIAS = "lama"
-FAST_DOWNWARD_ALIAS = "seq-opt-fdss-1"
+# FAST_DOWNWARD_ALIAS = "seq-opt-fdss-1"
+FAST_DOWNWARD_ALIAS = None
+FAST_DOWNWARD_SEARCH = "eager_greedy([add()])"
 
 def postprocess(x):
     return x.strip()
@@ -30,6 +32,41 @@ def get_cost(x):
         cost = float(splitted[counter+2])
     return cost
 
+def plan_and_collect(run, method, task_suffix, time_limit, domain_pddl_file, task_pddl_file_name):
+
+    # C. run fastforward to plan
+    plan_file_name = f"./experiments/run{run}/plans/{method}/{task_suffix}"
+    sas_file_name  = f"./experiments/run{run}/plans/{method}/{task_suffix}.sas"
+    if(FAST_DOWNWARD_ALIAS):
+        run_command = f"python ./downward/fast-downward.py --alias {FAST_DOWNWARD_ALIAS} " + \
+                f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
+                f"--sas-file {sas_file_name} " + \
+                f"{domain_pddl_file} {task_pddl_file_name}"
+    else:
+        run_command = f"python ./downward/fast-downward.py " + \
+                f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
+                f"--sas-file {sas_file_name} " + \
+                f"{domain_pddl_file} {task_pddl_file_name} " + \
+                f"--search '{FAST_DOWNWARD_SEARCH}'"
+    
+    # print(run_command)
+    os.system(run_command)
+
+    # D. collect the least cost plan
+    best_cost = 1e10
+    best_plan = None
+    for fn in glob.glob(f"{plan_file_name}.*"):
+        with open(fn, "r") as f:
+            try:
+                plans = f.readlines()
+                cost = get_cost(plans[-1])
+                if cost < best_cost:
+                    best_cost = cost
+                    best_plan = "\n".join([p.strip() for p in plans[:-1]])
+            except:
+                continue
+
+    return best_plan, best_cost
 
 ###############################################################################
 #
@@ -458,24 +495,9 @@ def llm_ic_pddl_planner(args, planner, domain):
         f.write(task_pddl_)
     time.sleep(1)
 
-    ## C. run fastforward to plan
-    plan_file_name = f"./experiments/run{args.run}/plans/llm_ic_pddl/{task_suffix}"
-    sas_file_name  = f"./experiments/run{args.run}/plans/llm_ic_pddl/{task_suffix}.sas"
-    os.system(f"python ./downward/fast-downward.py --alias {FAST_DOWNWARD_ALIAS} " + \
-              f"--search-time-limit {args.time_limit} --plan-file {plan_file_name} " + \
-              f"--sas-file {sas_file_name} " + \
-              f"{domain_pddl_file} {task_pddl_file_name}")
-
+    # C. run fastforward to plan
     # D. collect the least cost plan
-    best_cost = 1e10
-    best_plan = None
-    for fn in glob.glob(f"{plan_file_name}.*"):
-        with open(fn, "r") as f:
-            plans = f.readlines()
-            cost = get_cost(plans[-1])
-            if cost < best_cost:
-                best_cost = cost
-                best_plan = "\n".join([p.strip() for p in plans[:-1]])
+    best_plan, best_cost = plan_and_collect(args.run, "llm_ic_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
 
     # E. translate the plan back to natural language, and write it to result
     # commented out due to exceeding token limit of gpt-4
@@ -535,26 +557,8 @@ def llm_pddl_planner(args, planner, domain):
     time.sleep(1)
 
     # C. run fastforward to plan
-    plan_file_name = f"./experiments/run{args.run}/plans/llm_pddl/{task_suffix}"
-    sas_file_name  = f"./experiments/run{args.run}/plans/llm_pddl/{task_suffix}.sas"
-    os.system(f"python ./downward/fast-downward.py --alias {FAST_DOWNWARD_ALIAS} " + \
-              f"--search-time-limit {args.time_limit} --plan-file {plan_file_name} " + \
-              f"--sas-file {sas_file_name} " + \
-              f"{domain_pddl_file} {task_pddl_file_name}")
-
     # D. collect the least cost plan
-    best_cost = 1e10
-    best_plan = None
-    for fn in glob.glob(f"{plan_file_name}.*"):
-        with open(fn, "r") as f:
-            try:
-                plans = f.readlines()
-                cost = get_cost(plans[-1])
-                if cost < best_cost:
-                    best_cost = cost
-                    best_plan = "\n".join([p.strip() for p in plans[:-1]])
-            except:
-                continue
+    best_plan, best_cost = plan_and_collect(args.run, "llm_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
 
     # E. translate the plan back to natural language, and write it to result
     # commented out due to exceeding token limit of gpt-4
