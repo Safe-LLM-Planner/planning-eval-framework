@@ -12,7 +12,9 @@ import openai
 # FAST_DOWNWARD_ALIAS = "lama"
 # FAST_DOWNWARD_ALIAS = "seq-opt-fdss-1"
 FAST_DOWNWARD_ALIAS = None
-FAST_DOWNWARD_SEARCH = "eager_greedy([add()])"
+# FAST_DOWNWARD_SEARCH = "eager_greedy([add()])"
+FAST_DOWNWARD_SEARCH = None
+JULIA_PLANNER_SCRIPT = "run_planner.jl"
 
 def postprocess(x):
     return x.strip()
@@ -42,12 +44,14 @@ def plan_and_collect(run, method, task_suffix, time_limit, domain_pddl_file, tas
                 f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
                 f"--sas-file {sas_file_name} " + \
                 f"{domain_pddl_file} {task_pddl_file_name}"
-    else:
+    elif (FAST_DOWNWARD_SEARCH):
         run_command = f"python ./downward/fast-downward.py " + \
                 f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
                 f"--sas-file {sas_file_name} " + \
                 f"{domain_pddl_file} {task_pddl_file_name} " + \
                 f"--search '{FAST_DOWNWARD_SEARCH}'"
+    else:
+        run_command = f"julia {JULIA_PLANNER_SCRIPT} {domain_pddl_file} {task_pddl_file_name} {plan_file_name}"
     
     # print(run_command)
     os.system(run_command)
