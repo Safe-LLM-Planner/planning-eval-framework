@@ -218,7 +218,7 @@ class Planner:
         prompt = f"{domain_nl} \n" + \
                  f"Now consider a planning problem. " + \
                  f"The problem description is: \n {task_nl} \n" + \
-                 f"Can you provide an optimal plan, in the way of a " + \
+                 f"Can you provide a correct plan, in the way of a " + \
                  f"sequence of behaviors, to solve the problem?"
         return prompt
 
@@ -227,7 +227,7 @@ class Planner:
         prompt = f"{domain_nl} \n" + \
                  f"Now consider a planning problem. " + \
                  f"The problem description is: \n {task_nl} \n" + \
-                 f"Can you provide an optimal plan, in the way of a " + \
+                 f"Can you provide a correct plan, in the way of a " + \
                  f"sequence of behaviors, to solve the problem? \n" + \
                  f"Please think step by step."
         return prompt
@@ -348,7 +348,7 @@ class Planner:
                  f"An example planning problem is: \n {context_nl} \n" + \
                  f"A plan for the example problem is: \n {context_sol} \n" + \
                  f"Now I have a new planning problem and its description is: \n {task_nl} \n" + \
-                 f"Can you provide an optimal plan, in the way of a " + \
+                 f"Can you provide a correct plan, in the way of a " + \
                  f"sequence of behaviors, to solve the problem?"
         return prompt
 
@@ -449,7 +449,7 @@ class Planner:
         task_nl_ = " ".join(task_nl.split())
         prompt = f"A planning problem is described as: \n {task_nl} \n" + \
                  f"The corresponding domain PDDL file is: \n {domain_pddl_} \n" + \
-                 f"The optimal PDDL plan is: \n {plan} \n" + \
+                 f"A correct PDDL plan is: \n {plan} \n" + \
                  f"Transform the PDDL plan into a sequence of behaviors without further explanation."
         res = self.query(prompt).strip() + "\n"
         return res
@@ -461,7 +461,7 @@ def llm_ic_pddl_planner(args, planner, domain):
         context: (task natural language, task problem PDDL)
         Condition on the context (task description -> task problem PDDL),
         LLM will be asked to provide the problem PDDL of a new task description.
-        Then, we use a planner to find the near optimal solution, and translate
+        Then, we use a planner to find a correct solution, and translate
         that back to natural language.
     """
     context          = domain.get_context()
