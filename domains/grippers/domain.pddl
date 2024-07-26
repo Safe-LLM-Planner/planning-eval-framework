@@ -1,5 +1,5 @@
 (define (domain gripper-strips)
- (:requirements :strips :typing) 
+ (:requirements :strips :typing :constraints) 
  (:types room object robot gripper)
  (:predicates (at-robby ?r - robot ?x - room)
  	      (at ?o - object ?x - room)

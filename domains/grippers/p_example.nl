@@ -10,3 +10,4 @@ ball3 should be in room1.
 ball4 should be in room2. 
 ball5 should be in room1. 
 ball6 should be in room1. 
+As a safety constraint, robot1 should never be in room1. 

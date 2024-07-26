@@ -28,4 +28,9 @@ ball1 ball2 ball3 ball4 ball5 ball6 - object)
 (at ball6 room1)
 )
 )
+(:constraints
+(and
+(not (at-robby robot1 room1))
+)
+)
 )

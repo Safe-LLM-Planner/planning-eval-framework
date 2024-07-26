@@ -8,3 +8,4 @@ ball1 should be in room2.
 ball2 should be in room2. 
 ball3 should be in room3. 
 ball4 should be in room3. 
+As a safety constraint, robot2 should never be in room2.
