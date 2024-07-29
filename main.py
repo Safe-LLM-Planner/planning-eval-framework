@@ -6,6 +6,7 @@ import random
 import sys
 import time
 import backoff
+import textattack
 
 import openai
 
@@ -454,7 +455,6 @@ class Planner:
         res = self.query(prompt).strip() + "\n"
         return res
 
-
 def llm_ic_pddl_planner(args, planner, domain):
     """
     Our method:
@@ -464,6 +464,41 @@ def llm_ic_pddl_planner(args, planner, domain):
         Then, we use a planner to find a correct solution, and translate
         that back to natural language.
     """
+
+    def aux(task_suffix, task_nl):
+        start_time = time.time()
+
+        # A. generate problem pddl file
+        
+        prompt             = planner.create_llm_ic_pddl_prompt(task_nl, domain_pddl, context)
+        raw_result         = planner.query(prompt)
+        task_pddl_         = planner.parse_result(raw_result)
+
+        # B. write the problem file into the problem folder
+        task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_ic_pddl/{task_suffix}"
+        with open(task_pddl_file_name, "w") as f:
+            f.write(task_pddl_)
+        time.sleep(1)
+
+        # C. run fastforward to plan
+        # D. collect the least cost plan
+        best_plan, best_cost = plan_and_collect(args.run, "llm_ic_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
+
+        # E. translate the plan back to natural language, and write it to result
+        # commented out due to exceeding token limit of gpt-4
+        '''
+        if best_plan:
+            plans_nl = planner.plan_to_language(best_plan, task_nl, domain_nl, domain_pddl)
+            plan_nl_file_name = f"./experiments/run{args.run}/results/llm_ic_pddl/{task_suffix}"
+            with open(plan_nl_file_name, "w") as f:
+                f.write(plans_nl)
+        '''
+        end_time = time.time()
+        if best_plan:
+            print(f"[info] task {task} takes {end_time - start_time} sec, found a plan with cost {best_cost}")
+        else:
+            print(f"[info] task {task} takes {end_time - start_time} sec, no solution found")
+
     context          = domain.get_context()
     domain_pddl      = domain.get_domain_pddl()
     domain_pddl_file = domain.get_domain_pddl_file()
@@ -475,49 +510,29 @@ def llm_ic_pddl_planner(args, planner, domain):
     plan_folder    = f"./experiments/run{args.run}/plans/llm_ic_pddl/{domain.name}"
     result_folder  = f"./experiments/run{args.run}/results/llm_ic_pddl/{domain.name}"
 
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
+    os.makedirs(problem_folder, exist_ok=True)
+    os.makedirs(plan_folder, exist_ok=True)
+    os.makedirs(result_folder, exist_ok=True)
 
     task = args.task
 
-    start_time = time.time()
+    if(args.robustness_experiment):
 
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task) 
-    prompt             = planner.create_llm_ic_pddl_prompt(task_nl, domain_pddl, context)
-    raw_result         = planner.query(prompt)
-    task_pddl_         = planner.parse_result(raw_result)
+        perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
 
-    # B. write the problem file into the problem folder
-    task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_ic_pddl/{task_suffix}"
-    with open(task_pddl_file_name, "w") as f:
-        f.write(task_pddl_)
-    time.sleep(1)
+        task_suffix = domain.get_task_suffix(task)
+        task_suffix = os.path.splitext(task_suffix)[0]
 
-    # C. run fastforward to plan
-    # D. collect the least cost plan
-    best_plan, best_cost = plan_and_collect(args.run, "llm_ic_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
+        for fn in glob.glob(f"{perturbations_folder}/{task_suffix}_*"):
+            perturbed_task_suffix = f"{domain.name}/{os.path.splitext(os.path.basename(fn))[0]}.pddl"
+            with open(fn, "r") as f:
+                perturbed_task_nl = f.read()
+                aux(perturbed_task_suffix, perturbed_task_nl)
 
-    # E. translate the plan back to natural language, and write it to result
-    # commented out due to exceeding token limit of gpt-4
-    '''
-    if best_plan:
-        plans_nl = planner.plan_to_language(best_plan, task_nl, domain_nl, domain_pddl)
-        plan_nl_file_name = f"./experiments/run{args.run}/results/llm_ic_pddl/{task_suffix}"
-        with open(plan_nl_file_name, "w") as f:
-            f.write(plans_nl)
-    '''
-    end_time = time.time()
-    if best_plan:
-        print(f"[info] task {task} takes {end_time - start_time} sec, found a plan with cost {best_cost}")
     else:
-        print(f"[info] task {task} takes {end_time - start_time} sec, no solution found")
-
+        task_suffix = domain.get_task_suffix(task)
+        task_nl, _ = domain.get_task(task) 
+        aux(task_suffix, task_nl)
 
 def llm_pddl_planner(args, planner, domain):
     """
@@ -706,6 +721,22 @@ def llm_ic_planner(args, planner, domain):
     Baseline method:
         The LLM will be asked to directly give a plan based on the task description.
     """
+
+    def aux(task_suffix, task_nl):
+        start_time = time.time()
+
+        # A. generate problem pddl file
+
+        prompt             = planner.create_llm_ic_prompt(task_nl, domain_nl, context)
+        text_plan          = planner.query(prompt)
+
+        # B. write the problem file into the problem folder
+        text_plan_file_name = f"./experiments/run{args.run}/results/llm_ic/{task_suffix}"
+        with open(text_plan_file_name, "w") as f:
+            f.write(text_plan)
+        end_time = time.time()
+        print(f"[info] task {task} takes {end_time - start_time} sec")
+
     context          = domain.get_context()
     domain_pddl      = domain.get_domain_pddl()
     domain_pddl_file = domain.get_domain_pddl_file()
@@ -717,30 +748,29 @@ def llm_ic_planner(args, planner, domain):
     plan_folder    = f"./experiments/run{args.run}/plans/llm_ic/{domain.name}"
     result_folder  = f"./experiments/run{args.run}/results/llm_ic/{domain.name}"
 
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
+    os.makedirs(problem_folder, exist_ok=True)
+    os.makedirs(plan_folder, exist_ok=True)
+    os.makedirs(result_folder, exist_ok=True)
 
     task = args.task
 
-    start_time = time.time()
+    if(args.robustness_experiment):
 
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task) 
-    prompt             = planner.create_llm_ic_prompt(task_nl, domain_nl, context)
-    text_plan          = planner.query(prompt)
+        perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
 
-    # B. write the problem file into the problem folder
-    text_plan_file_name = f"./experiments/run{args.run}/results/llm_ic/{task_suffix}"
-    with open(text_plan_file_name, "w") as f:
-        f.write(text_plan)
-    end_time = time.time()
-    print(f"[info] task {task} takes {end_time - start_time} sec")
+        task_suffix = domain.get_task_suffix(task)
+        task_suffix = os.path.splitext(task_suffix)[0]
 
+        for fn in glob.glob(f"{perturbations_folder}/{task_suffix}_*"):
+            perturbed_task_suffix = f"{domain.name}/{os.path.splitext(os.path.basename(fn))[0]}.pddl"
+            with open(fn, "r") as f:
+                perturbed_task_nl = f.read()
+                aux(perturbed_task_suffix, perturbed_task_nl)
+
+    else:
+        task_suffix = domain.get_task_suffix(task)
+        task_nl, _ = domain.get_task(task) 
+        aux(task_suffix, task_nl)
 
 def print_all_prompts(planner):
     for domain_name in DOMAINS:
@@ -780,6 +810,31 @@ def print_all_prompts(planner):
             with open(f"./prompts/llm_ic_pddl/{task_suffix}.prompt", "w") as f:
                 f.write(llm_ic_pddl_prompt)
 
+def produce_perturbations(args, domain):
+
+    task = args.task
+
+    # produce perturbed instructions
+    task_nl, _ = domain.get_task(task)
+    task_suffix = domain.get_task_suffix(task)
+    task_suffix = os.path.splitext(task_suffix)[0]
+
+    transformation = textattack.transformations.WordSwapWordNet()
+    augmenter = textattack.augmentation.Augmenter(transformation=transformation,
+                                                    pct_words_to_swap=0.1, 
+                                                    transformations_per_example=10)
+    perturbed_task_nl_list = augmenter.augment(task_nl)
+
+    # create the tmp / result folders
+    perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
+
+    if not os.path.exists(perturbations_folder):
+        os.makedirs(f"{perturbations_folder}/{domain.name}", exist_ok=True)
+    
+    for i in range(0, len(perturbed_task_nl_list)):
+
+        with open(f"{perturbations_folder}/{task_suffix}_{i+1}.nl", "w") as f:
+            f.write(perturbed_task_nl_list[i])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="LLM-Planner")
@@ -795,6 +850,7 @@ if __name__ == "__main__":
     parser.add_argument('--task', type=int, default=0)
     parser.add_argument('--run', type=int, default=0)
     parser.add_argument('--print-prompts', action='store_true')
+    parser.add_argument('--robustness-experiment', action='store_true')
     args = parser.parse_args()
 
     # 1. initialize problem domain
@@ -803,7 +859,11 @@ if __name__ == "__main__":
     # 2. initialize the planner
     planner = Planner()
 
-    # 3. execute the llm planner
+    # 3. Produce perturbations if needed
+    if args.robustness_experiment:
+        produce_perturbations(args, domain)
+
+    # 4. execute the llm planner
     method = {
         "llm_ic_pddl_planner"   : llm_ic_pddl_planner,
         "llm_pddl_planner"      : llm_pddl_planner,
