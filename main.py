@@ -516,7 +516,7 @@ def llm_ic_pddl_planner(args, planner, domain):
 
     task = args.task
 
-    if(args.robustness_experiment):
+    if(args.command == "robustness-experiment"):
 
         perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
 
@@ -754,7 +754,7 @@ def llm_ic_planner(args, planner, domain):
 
     task = args.task
 
-    if(args.robustness_experiment):
+    if(args.command == "robustness-experiment"):
 
         perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
 
@@ -819,9 +819,15 @@ def produce_perturbations(args, domain):
     task_suffix = domain.get_task_suffix(task)
     task_suffix = os.path.splitext(task_suffix)[0]
 
-    transformation = textattack.transformations.WordSwapWordNet()
-    augmenter = textattack.augmentation.Augmenter(transformation=transformation,
-                                                    pct_words_to_swap=0.1, 
+    augmenter_classes = {
+        "wordnet": textattack.augmentation.recipes.WordNetAugmenter,
+        "charswap": textattack.augmentation.recipes.CharSwapAugmenter,
+        "back_trans": textattack.augmentation.recipes.BackTranslationAugmenter,
+        "back_transcription": textattack.augmentation.recipes.BackTranscriptionAugmenter
+    }
+
+    augmenter = augmenter_classes[args.perturbation_recipe](
+                                                    pct_words_to_swap=args.pct_words_to_swap, 
                                                     transformations_per_example=10)
     perturbed_task_nl_list = augmenter.augment(task_nl)
 
@@ -836,22 +842,91 @@ def produce_perturbations(args, domain):
         with open(f"{perturbations_folder}/{task_suffix}_{i+1}.nl", "w") as f:
             f.write(perturbed_task_nl_list[i])
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="LLM-Planner")
-    parser.add_argument('--domain', type=str, choices=DOMAINS, default="barman")
+
+import argparse
+
+def create_common_args():
+    common_args = argparse.ArgumentParser(add_help=False)
+    common_group = common_args.add_argument_group('common arguments')
+    common_group.add_argument('--domain', type=str, choices=DOMAINS, default="barman")
+    common_group.add_argument('--time-limit', type=int, default=200)
+    common_group.add_argument('--task', type=int, default=0)
+    common_group.add_argument('--run', type=int, default=0)
+    common_group.add_argument('--print-prompts', action='store_true')
+    return common_args
+
+def create_parser():
+    common_args = create_common_args()
+    
+    parser = argparse.ArgumentParser(description="LLM-Planner", parents=[common_args])
     parser.add_argument('--method', type=str, choices=["llm_ic_pddl_planner",
-                                                       "llm_pddl_planner",
-                                                       "llm_planner",
-                                                       "llm_stepbystep_planner",
-                                                       "llm_ic_planner",
-                                                       "llm_tot_ic_planner"],
-                                              default="llm_ic_pddl_planner")
-    parser.add_argument('--time-limit', type=int, default=200)
-    parser.add_argument('--task', type=int, default=0)
-    parser.add_argument('--run', type=int, default=0)
-    parser.add_argument('--print-prompts', action='store_true')
-    parser.add_argument('--robustness-experiment', action='store_true')
+                                                        "llm_pddl_planner",
+                                                        "llm_planner",
+                                                        "llm_stepbystep_planner",
+                                                        "llm_ic_planner",
+                                                        "llm_tot_ic_planner"],
+                                                        default="llm_ic_pddl_planner",
+                                                        nargs="+"
+                                                        )
+    
+    # Create subparsers
+    subparsers = parser.add_subparsers(dest='command')
+
+    # Create the robustness experiment subcommand
+    robustness_parser = subparsers.add_parser('robustness-experiment',
+                                              help='Run robustness experiment',
+                                              parents=[common_args])
+
+    # Add additional arguments specific to robustness experiment
+    robustness_parser.add_argument('--method', type=str, choices=["llm_ic_pddl_planner",
+                                                                    # "llm_pddl_planner",
+                                                                    # "llm_planner",
+                                                                    # "llm_stepbystep_planner",
+                                                                    "llm_ic_planner",
+                                                                    # "llm_tot_ic_planner"
+                                                                    ],
+                                                                    default="llm_ic_pddl_planner",
+                                                                    nargs="+"
+                                                                    )
+    robustness_parser.add_argument('--perturbation-recipe', type=str, choices=[
+                                                                                "wordnet",
+                                                                                "charswap",
+                                                                                "back_trans",
+                                                                                "back_transcription"
+                                                                                ]
+                                                                                )
+    robustness_parser.add_argument('--pct-words-to-swap', type=restricted_float, help='Percentage of words to transform')
+
+    return parser
+
+def restricted_float(x):
+    try:
+        x = float(x)
+    except ValueError:
+        raise argparse.ArgumentTypeError("%r not a floating-point literal" % (x,))
+
+    if x < 0.0 or x > 1.0:
+        raise argparse.ArgumentTypeError("%r not in range [0.0, 1.0]"%(x,))
+    return x
+
+def save_args_to_file(args, filename):
+    # Convert args namespace to a dictionary
+    args_dict = vars(args)
+    
+    # Write to file
+    with open(filename, 'w') as f:
+        for key, value in args_dict.items():
+            f.write(f"{key}: {value}\n")
+
+if __name__ == "__main__":
+
+    parser = create_parser()
     args = parser.parse_args()
+    
+    # log cli arguments
+    args_filepath = f"./experiments/run{args.run}/cli_args"
+    os.makedirs(os.path.dirname(args_filepath))
+    save_args_to_file(args, args_filepath)
 
     # 1. initialize problem domain
     domain = eval(args.domain.capitalize())()
@@ -860,20 +935,21 @@ if __name__ == "__main__":
     planner = Planner()
 
     # 3. Produce perturbations if needed
-    if args.robustness_experiment:
+    if args.command == "robustness-experiment":
         produce_perturbations(args, domain)
 
     # 4. execute the llm planner
-    method = {
+    available_methods = {
         "llm_ic_pddl_planner"   : llm_ic_pddl_planner,
         "llm_pddl_planner"      : llm_pddl_planner,
         "llm_planner"           : llm_planner,
         "llm_stepbystep_planner": llm_stepbystep_planner,
         "llm_ic_planner"        : llm_ic_planner,
         "llm_tot_ic_planner"       : llm_tot_ic_planner,
-    }[args.method]
+    }
 
     if args.print_prompts:
         print_all_prompts(planner)
     else:
-        method(args, planner, domain)
+        for method in args.method:
+            available_methods[method](args, planner, domain)
