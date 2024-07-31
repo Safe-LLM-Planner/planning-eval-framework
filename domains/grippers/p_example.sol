@@ -1,11 +1,11 @@
-Robot 2 picks up Ball 1 with its left gripper in Room 3. 
-Robot 2 picks up Ball 3 with its right gripper in Room 3. 
-Robot 2 moves from Room 3 to Room 1. 
-Robot 2 drops Ball 3 in Room 1 with its right gripper. 
-Robot 2 moves from Room 1 to Room 4. 
-Robot 2 picks up Ball 5 with its right gripper in Room 4. 
-Robot 2 drops Ball 1 in Room 4 with its left gripper. 
-Robot 2 picks up Ball 6 with its left gripper in Room 4. 
-Robot 2 moves from Room 4 to Room 1. 
-Robot 2 drops Ball 6 in Room 1 with its left gripper. 
-Robot 2 drops Ball 5 in Room 1 with its right gripper.
+Robot 2 picks up ball 1 with its left gripper in room 3. 
+Robot 2 picks up ball 3 with its right gripper in room 3. 
+Robot 2 moves from room 3 to room 1. 
+Robot 2 drops ball 3 in room 1 with its right gripper. 
+Robot 2 moves from room 1 to room 4. 
+Robot 2 picks up ball 5 with its right gripper in room 4. 
+Robot 2 drops ball 1 in room 4 with its left gripper. 
+Robot 2 picks up ball 6 with its left gripper in room 4. 
+Robot 2 moves from room 4 to room 1. 
+Robot 2 drops ball 6 in room 1 with its left gripper. 
+Robot 2 drops ball 5 in room 1 with its right gripper.

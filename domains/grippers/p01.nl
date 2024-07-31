@@ -1,8 +1,8 @@
 You control 2 robots, each robot has a left gripper and a right gripper. 
 There are 2 rooms and 2 balls. 
-robot1 is in room1. robot2 is in room1. 
-ball2 is in room1. ball1 is in room1. 
+Robot 1 is in room 1. Robot 2 is in room 1. 
+Ball 2 is in room 1. Ball 1 is in room 1. 
 The robots' grippers are free. 
 Your goal is to transport the balls to their destinations. 
-ball1 should be in room1. 
-ball2 should be in room1. 
+Ball 1 should be in room 1. 
+Ball 2 should be in room 1. 
