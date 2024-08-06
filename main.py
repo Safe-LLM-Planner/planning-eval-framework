@@ -851,7 +851,7 @@ def create_common_args():
     common_group.add_argument('--domain', type=str, choices=DOMAINS, default="barman")
     common_group.add_argument('--time-limit', type=int, default=200)
     common_group.add_argument('--task', type=int, default=0)
-    common_group.add_argument('--run', type=int, default=0)
+    common_group.add_argument('--run', type=int, default=-1)
     common_group.add_argument('--print-prompts', action='store_true')
     return common_args
 
@@ -918,11 +918,33 @@ def save_args_to_file(args, filename):
         for key, value in args_dict.items():
             f.write(f"{key}: {value}\n")
 
+def find_next_missing_run(directory):
+    # List all items in the directory
+    items = os.listdir(directory)
+    
+    # Filter out directories that start with 'run' and extract the numbers
+    run_numbers = []
+    for item in items:
+        if item.startswith('run') and item[3:].isdigit():
+            run_numbers.append(int(item[3:]))
+    
+    # Find the next missing number
+    if run_numbers:
+        next_run = max(run_numbers) + 1
+    else:
+        next_run = 0  # If no 'run' directories exist, start with 0
+    
+    return next_run
+
 if __name__ == "__main__":
 
     parser = create_parser()
     args = parser.parse_args()
     
+    # if run number is not set, compute next one
+    if args.run == -1:
+        args.run = find_next_missing_run("./experiments")
+
     # log cli arguments
     args_filepath = f"./experiments/run{args.run}/cli_args"
     os.makedirs(os.path.dirname(args_filepath))

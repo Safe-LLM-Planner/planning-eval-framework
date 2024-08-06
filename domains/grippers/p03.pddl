@@ -22,10 +22,7 @@ ball1 ball2 - object)
 )
 (:constraints
 (and
-(not (at-robby robot1 room2))
-(not (at-robby robot1 room4))
-(not (at-robby robot2 room1))
-(not (at-robby robot2 room5))
+(not (at-robby robot1 room5))
 )
 )
 )
