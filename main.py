@@ -17,6 +17,15 @@ FAST_DOWNWARD_ALIAS = None
 FAST_DOWNWARD_SEARCH = None
 JULIA_PLANNER_SCRIPT = "run_planner.jl"
 
+def load_openai_key():
+    openai_keys_file = os.path.join(os.getcwd(), "keys/openai_keys.txt")
+    with open(openai_keys_file, "r") as f:
+        context = f.read()
+    openai_api_key = context.strip().split('\n')[0]
+    return openai_api_key
+
+openai_client = openai.OpenAI(api_key=load_openai_key())
+
 def postprocess(x):
     return x.strip()
 
@@ -202,17 +211,6 @@ class Manipulation(Domain):
 
 
 class Planner:
-    def __init__(self):
-        self.openai_api_keys = self.load_openai_keys()
-        self.use_chatgpt = True
-
-    def load_openai_keys(self,):
-        openai_keys_file = os.path.join(os.getcwd(), "keys/openai_keys.txt")
-        with open(openai_keys_file, "r") as f:
-            context = f.read()
-        context_lines = context.strip().split('\n')
-        print(context_lines)
-        return context_lines
 
     def create_llm_prompt(self, task_nl, domain_nl):
         # Baseline 1 (LLM-as-P): directly ask the LLM for plan
@@ -375,75 +373,31 @@ class Planner:
         return prompt
 
     def query(self, prompt_text):
-        server_flag = 0
         server_cnt = 0
         result_text = ""
         while server_cnt < 10:
             try:
-                self.update_key()
-                if self.use_chatgpt: # currently, we will always use chatgpt
-                    @backoff.on_exception(backoff.expo, openai.error.RateLimitError)
-                    def completions_with_backoff(**kwargs):
-                        return openai.ChatCompletion.create(**kwargs)
+                @backoff.on_exception(backoff.expo, openai.RateLimitError)
+                def completions_with_backoff(**kwargs):
+                    return openai_client.chat.completions.create(**kwargs)
 
-                    # response = openai.ChatCompletion.create(
-                    response = completions_with_backoff(
-                        model="gpt-4",
-                        temperature=0.0,
-                        top_p=1,
-                        frequency_penalty=0,
-                        presence_penalty=0,
-                        messages=[
-                            {"role": "system", "content": "You are a helpful assistant."},
-                            {"role": "user", "content": prompt_text},
-                        ],
-                    )
-                    result_text = response['choices'][0]['message']['content']
-                else:
-                    response =  openai.Completion.create(
-                        model="text-davinci-003",
-                        prompt=prompt_text,
-                        temperature=0.0,
-                        max_tokens=1024,
-                        top_p=1,
-                        frequency_penalty=0,
-                        presence_penalty=0
-                    )
-                    result_text = response['choices'][0]['text']
-                server_flag = 1
-                if server_flag:
-                    break
+                response = completions_with_backoff(
+                    model="gpt-4",
+                    temperature=0.0,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": prompt_text},
+                    ],
+                )
+                result_text = response.choices[0].message.content
+                break
             except Exception as e:
                 server_cnt += 1
                 print(e)
         return result_text
-
-    def update_key(self):
-        curr_key = self.openai_api_keys[0]
-        openai.api_key = curr_key
-        self.openai_api_keys.remove(curr_key)
-        self.openai_api_keys.append(curr_key)
-
-    def parse_result(self, pddl_string):
-        # remove extra texts
-        #try:
-        #    beg = pddl_string.find("```") + 3
-        #    pddl_string = pddl_string[beg: beg + pddl_string[beg:].find("```")]
-        #except:
-        #    raise Exception("[error] cannot find ```pddl-file``` in the pddl string")
-
-        # remove comments, they can cause error
-        #t0 = time.time()
-        #while pddl_string.find(";") >= 0:
-        #    start = pddl_string.find(";")
-        #    i = 0
-        #    while pddl_string[start+i] != ")" and pddl_string[start+i] != "\n":
-        #        i += 1
-        #    pddl_string = pddl_string[:start] + pddl_string[start+i:]
-        #pddl_string = pddl_string.strip() + "\n"
-        #t1 = time.time()
-        #print(f"[info] remove comments takes {t1-t0} sec")
-        return pddl_string
 
     def plan_to_language(self, plan, task_nl, domain_nl, domain_pddl):
         domain_pddl_ = " ".join(domain_pddl.split())
@@ -471,8 +425,7 @@ def llm_ic_pddl_planner(args, planner, domain):
         # A. generate problem pddl file
         
         prompt             = planner.create_llm_ic_pddl_prompt(task_nl, domain_pddl, context)
-        raw_result         = planner.query(prompt)
-        task_pddl_         = planner.parse_result(raw_result)
+        task_pddl_         = planner.query(prompt)
 
         # B. write the problem file into the problem folder
         task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_ic_pddl/{task_suffix}"
@@ -566,8 +519,7 @@ def llm_pddl_planner(args, planner, domain):
     task_suffix        = domain.get_task_suffix(task)
     task_nl, task_pddl = domain.get_task(task) 
     prompt             = planner.create_llm_pddl_prompt(task_nl, domain_nl)
-    raw_result         = planner.query(prompt)
-    task_pddl_         = planner.parse_result(raw_result)
+    task_pddl_         = planner.query(prompt)
 
     # B. write the problem file into the problem folder
     task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_pddl/{task_suffix}"
