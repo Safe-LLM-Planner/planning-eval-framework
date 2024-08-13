@@ -1,14 +1,15 @@
 import argparse
+import backoff
 import glob
 import json
+import openai
 import os
 import random
+import subprocess
 import sys
 import time
-import backoff
 import textattack
 
-import openai
 
 # FAST_DOWNWARD_ALIAS = "lama"
 # FAST_DOWNWARD_ALIAS = "seq-opt-fdss-1"
@@ -44,43 +45,64 @@ def get_cost(x):
         cost = float(splitted[counter+2])
     return cost
 
-def plan_and_collect(run, method, task_suffix, time_limit, domain_pddl_file, task_pddl_file_name):
+def run_symbolic_planner(domain_pddl, task_pddl):
 
-    # C. run fastforward to plan
-    plan_file_name = f"./experiments/run{run}/plans/{method}/{task_suffix}"
-    sas_file_name  = f"./experiments/run{run}/plans/{method}/{task_suffix}.sas"
-    if(FAST_DOWNWARD_ALIAS):
-        run_command = f"python ./downward/fast-downward.py --alias {FAST_DOWNWARD_ALIAS} " + \
-                f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
-                f"--sas-file {sas_file_name} " + \
-                f"{domain_pddl_file} {task_pddl_file_name}"
-    elif (FAST_DOWNWARD_SEARCH):
-        run_command = f"python ./downward/fast-downward.py " + \
-                f"--search-time-limit {time_limit} --plan-file {plan_file_name} " + \
-                f"--sas-file {sas_file_name} " + \
-                f"{domain_pddl_file} {task_pddl_file_name} " + \
-                f"--search '{FAST_DOWNWARD_SEARCH}'"
-    else:
-        run_command = f"julia {JULIA_PLANNER_SCRIPT} {domain_pddl_file} {task_pddl_file_name} {plan_file_name}"
+    os.makedirs("./tmp/",exist_ok=True)
+
+    task_pddl_file_name = f"./tmp/task.pddl"
+    with open(task_pddl_file_name, "w") as f:
+        f.write(task_pddl)
+
+    domain_pddl_file_name = f"./tmp/domain.pddl"
+    with open(domain_pddl_file_name, "w") as f:
+        f.write(domain_pddl)
+
+    plan_file_name = f"./tmp/plan.pddl"
+
+    command = ["julia", JULIA_PLANNER_SCRIPT, domain_pddl_file_name, task_pddl_file_name, plan_file_name]
     
-    # print(run_command)
-    os.system(run_command)
+    plan = ""
 
-    # D. collect the least cost plan
-    best_cost = 1e10
-    best_plan = None
-    for fn in glob.glob(f"{plan_file_name}.*"):
-        with open(fn, "r") as f:
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError as e:
+        print("Symbolic planner failed.")
+    else:
+        with open(plan_file_name, "r") as f:
+            plan = f.read()
+        
+        os.remove(task_pddl_file_name)
+        os.remove(domain_pddl_file_name)
+        os.remove(plan_file_name)
+
+    return plan
+
+def query_llm(prompt_text):
+        server_cnt = 0
+        result_text = ""
+        while server_cnt < 10:
             try:
-                plans = f.readlines()
-                cost = get_cost(plans[-1])
-                if cost < best_cost:
-                    best_cost = cost
-                    best_plan = "\n".join([p.strip() for p in plans[:-1]])
-            except:
-                continue
+                @backoff.on_exception(backoff.expo, openai.RateLimitError)
+                def completions_with_backoff(**kwargs):
+                    return openai_client.chat.completions.create(**kwargs)
 
-    return best_plan, best_cost
+                response = completions_with_backoff(
+                    model="gpt-4",
+                    temperature=0.0,
+                    top_p=1,
+                    frequency_penalty=0,
+                    presence_penalty=0,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": prompt_text},
+                    ],
+                )
+                result_text = response.choices[0].message.content
+                break
+            except Exception as e:
+                server_cnt += 1
+                print(e)
+        return result_text
 
 ###############################################################################
 #
@@ -209,10 +231,82 @@ class Manipulation(Domain):
 #
 ###############################################################################
 
+class BasePlanner:
+    
+    def run_planner(self, task_nl, domain_nl, domain_pddl):
+        pass
 
-class Planner:
+    def set_context(self, context):
+        self.context = context
 
-    def create_llm_prompt(self, task_nl, domain_nl):
+    def _create_prompt(self, task_nl, domain_nl):
+        pass
+
+class BaseLlmPlanner(BasePlanner):
+
+    def run_planner(self, task_nl, domain_nl, domain_pddl):
+        
+        prompt = self._create_prompt(task_nl, domain_nl)
+        text_plan = query_llm(prompt)
+
+        return text_plan, None
+
+class BaseLlmPddlPlanner(BasePlanner):
+
+    def run_planner(self, task_nl, domain_nl, domain_pddl):
+        
+        prompt = self._create_prompt(task_nl, domain_nl)
+        task_pddl = query_llm(prompt)
+
+        plan = run_symbolic_planner(domain_pddl, task_pddl)
+
+        return plan, task_pddl
+
+class LlmIcPddlPlanner(BaseLlmPddlPlanner):
+    """
+    Our method:
+        context: (task natural language, task problem PDDL)
+        Condition on the context (task description -> task problem PDDL),
+        LLM will be asked to provide the problem PDDL of a new task description.
+        Then, we use a planner to find a correct solution, and translate
+        that back to natural language.
+    """
+
+    def _create_prompt(self, task_nl, domain_nl):
+        # our method (LM+P), create the problem PDDL given the context
+        context_nl, context_pddl, context_sol = self.context
+        prompt = f"I want you to solve planning problems. " + \
+                 f"An example planning problem is: \n {context_nl} \n" + \
+                 f"The problem PDDL file to this problem is: \n {context_pddl} \n" + \
+                 f"Now I have a new planning problem and its description is: \n {task_nl} \n" + \
+                 f"Provide me with the problem PDDL file that describes " + \
+                 f"the new planning problem directly without further explanations? Only return the PDDL file. Do not return anything else."
+        return prompt
+
+class LlmPddlPlanner(BaseLlmPddlPlanner):
+    """
+    Baseline method:
+        Same as ours, except that no context is given. In other words, the LLM
+        will be asked to directly give a problem PDDL file without any context.
+    """
+
+    def _create_prompt(self, task_nl, domain_nl):
+        # Baseline 3 (LM+P w/o context), no context, create the problem PDDL
+        prompt = f"{domain_nl} \n" + \
+                 f"Now consider a planning problem. " + \
+                 f"The problem description is: \n {task_nl} \n" + \
+                 f"Provide me with the problem PDDL file that describes " + \
+                 f"the planning problem directly without further explanations?" +\
+                 f"Keep the domain name consistent in the problem PDDL. Only return the PDDL file. Do not return anything else."
+        return prompt
+
+class LlmPlanner(BaseLlmPlanner):
+    """
+    Baseline method:
+        The LLM will be asked to directly give a plan based on the task description.
+    """
+
+    def _create_prompt(self, task_nl, domain_nl):
         # Baseline 1 (LLM-as-P): directly ask the LLM for plan
         prompt = f"{domain_nl} \n" + \
                  f"Now consider a planning problem. " + \
@@ -221,7 +315,30 @@ class Planner:
                  f"sequence of behaviors, to solve the problem?"
         return prompt
 
-    def create_llm_stepbystep_prompt(self, task_nl, domain_nl):
+class LlmIcPlanner(BaseLlmPlanner):
+    """
+    Baseline method:
+        The LLM will be asked to directly give a plan based on the task description.
+    """
+
+    def _create_prompt(self, task_nl, domain_nl):
+        # Baseline 2 (LLM-as-P with context): directly ask the LLM for plan
+        context_nl, context_pddl, context_sol = self.context
+        prompt = f"{domain_nl} \n" + \
+                 f"An example planning problem is: \n {context_nl} \n" + \
+                 f"A plan for the example problem is: \n {context_sol} \n" + \
+                 f"Now I have a new planning problem and its description is: \n {task_nl} \n" + \
+                 f"Can you provide a correct plan, in the way of a " + \
+                 f"sequence of behaviors, to solve the problem?"
+        return prompt
+
+class LlmSbSPlanner(BaseLlmPlanner):
+    """
+    Baseline method:
+        The LLM will be asked to directly give a plan based on the task description.
+    """
+
+    def _create_prompt(self, task_nl, domain_nl):
         # Baseline 1 (LLM-as-P): directly ask the LLM for plan
         prompt = f"{domain_nl} \n" + \
                  f"Now consider a planning problem. " + \
@@ -231,7 +348,58 @@ class Planner:
                  f"Please think step by step."
         return prompt
 
-    def create_llm_tot_ic_prompt(self, task_nl, domain_nl, context, plan):
+class LlmTotPlanner(BasePlanner):
+    """
+    Tree of Thoughts planner
+    """
+
+    def run_planner(self, task_nl, domain_nl, domain_pddl, time_left=200, max_depth=2):
+        context = self.context
+        from queue import PriorityQueue
+        start_time = time.time()
+        plan_queue = PriorityQueue()
+        plan_queue.put((0, ""))
+        while time.time() - start_time < time_left and not plan_queue.empty():
+            priority, plan = plan_queue.get()
+            # print (priority, plan)
+            steps = plan.split('\n')
+            if len(steps) > max_depth:
+                return "", None
+            candidates_prompt = self._create_llm_tot_ic_prompt(task_nl, domain_nl, context, plan)
+            candidates = query_llm(candidates_prompt).strip()
+            print (candidates)
+            lines = candidates.split('\n')
+            for line in lines:
+                if time.time() - start_time > time_left:
+                    break
+                if len(line) > 0 and '->' in line:
+                    new_plan = plan + "\n" + line
+                    value_prompt = self._create_llm_tot_ic_value_prompt(task_nl, domain_nl, context, new_plan)
+                    answer = query_llm(value_prompt).strip().lower()
+                    print(new_plan)
+                    print("Response \n" + answer)
+
+                    if "reached" in answer:
+                        return new_plan, None
+
+                    if "impossible" in answer:
+                        continue
+
+                    if "answer: " in answer:
+                        answer = answer.split("answer: ")[1]
+
+                    try:
+                        score = float(answer)
+                    except ValueError:
+                        continue
+
+                    if score > 0:
+                        new_priority = priority + 1 / score
+                        plan_queue.put((new_priority, new_plan))
+
+        return "", None
+
+    def _create_llm_tot_ic_prompt(self, task_nl, domain_nl, context, plan):
         context_nl, context_pddl, context_sol = context
         prompt = f"Given the current state, provide the set of feasible actions and their corresponding next states, using the format 'action -> state'. \n" + \
                  f"Keep the list short. Think carefully about the requirements of the actions you select and make sure they are met in the current state. \n" + \
@@ -245,7 +413,7 @@ class Planner:
         # print(prompt)
         return prompt
 
-    def create_llm_tot_ic_value_prompt(self, task_nl, domain_nl, context, plan):
+    def _create_llm_tot_ic_value_prompt(self, task_nl, domain_nl, context, plan):
         context_nl, context_pddl, context_sol = context
         context_sure_1 = context_sol.split('\n')[0]
         context_sure_2 = context_sol.split('\n')[0] + context_sol.split('\n')[1]
@@ -294,435 +462,75 @@ class Planner:
 
         return prompt
 
+def run_experiment(args, method, planner: BasePlanner, domain):
 
-    def tot_bfs(self, task_nl, domain_nl, context, time_left=200, max_depth=2):
-        from queue import PriorityQueue
-        start_time = time.time()
-        plan_queue = PriorityQueue()
-        plan_queue.put((0, ""))
-        while time.time() - start_time < time_left and not plan_queue.empty():
-            priority, plan = plan_queue.get()
-            # print (priority, plan)
-            steps = plan.split('\n')
-            if len(steps) > max_depth:
-                return ""
-            candidates_prompt = self.create_llm_tot_ic_prompt(task_nl, domain_nl, context, plan)
-            candidates = self.query(candidates_prompt).strip()
-            print (candidates)
-            lines = candidates.split('\n')
-            for line in lines:
-                if time.time() - start_time > time_left:
-                    break
-                if len(line) > 0 and '->' in line:
-                    new_plan = plan + "\n" + line
-                    value_prompt = self.create_llm_tot_ic_value_prompt(task_nl, domain_nl, context, new_plan)
-                    answer = self.query(value_prompt).strip().lower()
-                    print(new_plan)
-                    print("Response \n" + answer)
+    context          = domain.get_context()
+    domain_pddl      = domain.get_domain_pddl()
+    domain_pddl_file = domain.get_domain_pddl_file()
+    domain_nl        = domain.get_domain_nl()
+    domain_nl_file   = domain.get_domain_nl_file()
 
-                    if "reached" in answer:
-                        return new_plan
+    # create the tmp / result folders
+    problem_folder = f"./experiments/run{args.run}/problems/{method}/{domain.name}"
+    plan_folder    = f"./experiments/run{args.run}/plans/{method}/{domain.name}"
 
-                    if "impossible" in answer:
-                        continue
+    os.makedirs(problem_folder, exist_ok=True)
+    os.makedirs(plan_folder, exist_ok=True)
+    os.makedirs(result_folder, exist_ok=True)
 
-                    if "answer: " in answer:
-                        answer = answer.split("answer: ")[1]
+    task = args.task
 
-                    try:
-                        score = float(answer)
-                    except ValueError:
-                        continue
+    if(args.command == "robustness-experiment"):
 
-                    if score > 0:
-                        new_priority = priority + 1 / score
-                        plan_queue.put((new_priority, new_plan))
+        perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
 
-        return ""
+        task_suffix = domain.get_task_suffix(task)
+        task_suffix = os.path.splitext(task_suffix)[0]
 
-    def create_llm_ic_prompt(self, task_nl, domain_nl, context):
-        # Baseline 2 (LLM-as-P with context): directly ask the LLM for plan
-        context_nl, context_pddl, context_sol = context
-        prompt = f"{domain_nl} \n" + \
-                 f"An example planning problem is: \n {context_nl} \n" + \
-                 f"A plan for the example problem is: \n {context_sol} \n" + \
-                 f"Now I have a new planning problem and its description is: \n {task_nl} \n" + \
-                 f"Can you provide a correct plan, in the way of a " + \
-                 f"sequence of behaviors, to solve the problem?"
-        return prompt
+        for fn in glob.glob(f"{perturbations_folder}/{task_suffix}_*"):
+            perturbed_task_suffix = f"{domain.name}/{os.path.splitext(os.path.basename(fn))[0]}.pddl"
+            with open(fn, "r") as f:
+                perturbed_task_nl = f.read()
+                
+                start_time = time.time()
 
-    def create_llm_pddl_prompt(self, task_nl, domain_nl):
-        # Baseline 3 (LM+P w/o context), no context, create the problem PDDL
-        prompt = f"{domain_nl} \n" + \
-                 f"Now consider a planning problem. " + \
-                 f"The problem description is: \n {task_nl} \n" + \
-                 f"Provide me with the problem PDDL file that describes " + \
-                 f"the planning problem directly without further explanations?" +\
-                 f"Keep the domain name consistent in the problem PDDL. Only return the PDDL file. Do not return anything else."
-        return prompt
+                planner.set_context(context)
+                plan, task_pddl = planner.run_planner(perturbed_task_nl, domain_nl, domain_pddl)
 
-    def create_llm_ic_pddl_prompt(self, task_nl, domain_pddl, context):
-        # our method (LM+P), create the problem PDDL given the context
-        context_nl, context_pddl, context_sol = context
-        prompt = f"I want you to solve planning problems. " + \
-                 f"An example planning problem is: \n {context_nl} \n" + \
-                 f"The problem PDDL file to this problem is: \n {context_pddl} \n" + \
-                 f"Now I have a new planning problem and its description is: \n {task_nl} \n" + \
-                 f"Provide me with the problem PDDL file that describes " + \
-                 f"the new planning problem directly without further explanations? Only return the PDDL file. Do not return anything else."
-        return prompt
+                end_time = time.time()
 
-    def query(self, prompt_text):
-        server_cnt = 0
-        result_text = ""
-        while server_cnt < 10:
-            try:
-                @backoff.on_exception(backoff.expo, openai.RateLimitError)
-                def completions_with_backoff(**kwargs):
-                    return openai_client.chat.completions.create(**kwargs)
+                if (task_pddl):
+                    task_pddl_file_name = f"./experiments/run{args.run}/problems/{method}/{perturbed_task_suffix}"
+                    with open(task_pddl_file_name, "w") as f:
+                        f.write(task_pddl)
 
-                response = completions_with_backoff(
-                    model="gpt-4",
-                    temperature=0.0,
-                    top_p=1,
-                    frequency_penalty=0,
-                    presence_penalty=0,
-                    messages=[
-                        {"role": "system", "content": "You are a helpful assistant."},
-                        {"role": "user", "content": prompt_text},
-                    ],
-                )
-                result_text = response.choices[0].message.content
-                break
-            except Exception as e:
-                server_cnt += 1
-                print(e)
-        return result_text
+                plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{perturbed_task_suffix}"
+                with open(plan_pddl_file_name, "w") as f:
+                    f.write(plan)
 
-    def plan_to_language(self, plan, task_nl, domain_nl, domain_pddl):
-        domain_pddl_ = " ".join(domain_pddl.split())
-        task_nl_ = " ".join(task_nl.split())
-        prompt = f"A planning problem is described as: \n {task_nl} \n" + \
-                 f"The corresponding domain PDDL file is: \n {domain_pddl_} \n" + \
-                 f"A correct PDDL plan is: \n {plan} \n" + \
-                 f"Transform the PDDL plan into a sequence of behaviors without further explanation."
-        res = self.query(prompt).strip() + "\n"
-        return res
+                print(f"[info] task {task} takes {end_time - start_time} sec")
 
-def llm_ic_pddl_planner(args, planner, domain):
-    """
-    Our method:
-        context: (task natural language, task problem PDDL)
-        Condition on the context (task description -> task problem PDDL),
-        LLM will be asked to provide the problem PDDL of a new task description.
-        Then, we use a planner to find a correct solution, and translate
-        that back to natural language.
-    """
-
-    def aux(task_suffix, task_nl):
-        start_time = time.time()
-
-        # A. generate problem pddl file
+    else:
+        task_suffix = domain.get_task_suffix(task)
+        task_nl, _ = domain.get_task(task) 
         
-        prompt             = planner.create_llm_ic_pddl_prompt(task_nl, domain_pddl, context)
-        task_pddl_         = planner.query(prompt)
-
-        # B. write the problem file into the problem folder
-        task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_ic_pddl/{task_suffix}"
-        with open(task_pddl_file_name, "w") as f:
-            f.write(task_pddl_)
-        time.sleep(1)
-
-        # C. run fastforward to plan
-        # D. collect the least cost plan
-        best_plan, best_cost = plan_and_collect(args.run, "llm_ic_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
-
-        # E. translate the plan back to natural language, and write it to result
-        # commented out due to exceeding token limit of gpt-4
-        '''
-        if best_plan:
-            plans_nl = planner.plan_to_language(best_plan, task_nl, domain_nl, domain_pddl)
-            plan_nl_file_name = f"./experiments/run{args.run}/results/llm_ic_pddl/{task_suffix}"
-            with open(plan_nl_file_name, "w") as f:
-                f.write(plans_nl)
-        '''
-        end_time = time.time()
-        if best_plan:
-            print(f"[info] task {task} takes {end_time - start_time} sec, found a plan with cost {best_cost}")
-        else:
-            print(f"[info] task {task} takes {end_time - start_time} sec, no solution found")
-
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm_ic_pddl/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm_ic_pddl/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm_ic_pddl/{domain.name}"
-
-    os.makedirs(problem_folder, exist_ok=True)
-    os.makedirs(plan_folder, exist_ok=True)
-    os.makedirs(result_folder, exist_ok=True)
-
-    task = args.task
-
-    if(args.command == "robustness-experiment"):
-
-        perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
-
-        task_suffix = domain.get_task_suffix(task)
-        task_suffix = os.path.splitext(task_suffix)[0]
-
-        for fn in glob.glob(f"{perturbations_folder}/{task_suffix}_*"):
-            perturbed_task_suffix = f"{domain.name}/{os.path.splitext(os.path.basename(fn))[0]}.pddl"
-            with open(fn, "r") as f:
-                perturbed_task_nl = f.read()
-                aux(perturbed_task_suffix, perturbed_task_nl)
-
-    else:
-        task_suffix = domain.get_task_suffix(task)
-        task_nl, _ = domain.get_task(task) 
-        aux(task_suffix, task_nl)
-
-def llm_pddl_planner(args, planner, domain):
-    """
-    Baseline method:
-        Same as ours, except that no context is given. In other words, the LLM
-        will be asked to directly give a problem PDDL file without any context.
-    """
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm_pddl/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm_pddl/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm_pddl/{domain.name}"
-
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
-
-    task = args.task
-
-    start_time = time.time()
-
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task) 
-    prompt             = planner.create_llm_pddl_prompt(task_nl, domain_nl)
-    task_pddl_         = planner.query(prompt)
-
-    # B. write the problem file into the problem folder
-    task_pddl_file_name = f"./experiments/run{args.run}/problems/llm_pddl/{task_suffix}"
-    with open(task_pddl_file_name, "w") as f:
-        f.write(task_pddl_)
-    time.sleep(1)
-
-    # C. run fastforward to plan
-    # D. collect the least cost plan
-    best_plan, best_cost = plan_and_collect(args.run, "llm_pddl", task_suffix,args.time_limit,domain_pddl_file,task_pddl_file_name)
-
-    # E. translate the plan back to natural language, and write it to result
-    # commented out due to exceeding token limit of gpt-4
-    '''
-    if best_plan:
-        plans_nl = planner.plan_to_language(best_plan, task_nl, domain_nl, domain_pddl)
-        plan_nl_file_name = f"./experiments/run{args.run}/results/llm_pddl/{task_suffix}"
-        with open(plan_nl_file_name, "w") as f:
-            f.write(plans_nl)
-    '''
-    end_time = time.time()
-    if best_plan:
-        print(f"[info] task {task} takes {end_time - start_time} sec, found a plan with cost {best_cost}")
-    else:
-        print(f"[info] task {task} takes {end_time - start_time} sec, no solution found")
-
-
-def llm_planner(args, planner, domain):
-    """
-    Baseline method:
-        The LLM will be asked to directly give a plan based on the task description.
-    """
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm/{domain.name}"
-
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
-
-    task = args.task
-
-    start_time = time.time()
-
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task) 
-    prompt             = planner.create_llm_prompt(task_nl, domain_nl)
-    text_plan          = planner.query(prompt)
-
-    # B. write the problem file into the problem folder
-    text_plan_file_name = f"./experiments/run{args.run}/results/llm/{task_suffix}"
-    with open(text_plan_file_name, "w") as f:
-        f.write(text_plan)
-    end_time = time.time()
-    print(f"[info] task {task} takes {end_time - start_time} sec")
-
-
-def llm_stepbystep_planner(args, planner, domain):
-    """
-    Baseline method:
-        The LLM will be asked to directly give a plan based on the task description.
-    """
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm_step/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm_step/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm_step/{domain.name}"
-
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
-
-    task = args.task
-
-    start_time = time.time()
-
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task) 
-    prompt             = planner.create_llm_stepbystep_prompt(task_nl, domain_nl)
-    text_plan          = planner.query(prompt)
-
-    # B. write the problem file into the problem folder
-    text_plan_file_name = f"./experiments/run{args.run}/results/llm_step/{task_suffix}"
-    with open(text_plan_file_name, "w") as f:
-        f.write(text_plan)
-    end_time = time.time()
-    print(f"[info] task {task} takes {end_time - start_time} sec")
-
-
-def llm_tot_ic_planner(args, planner, domain):
-    """
-    Tree of Thoughts planner
-    """
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm_tot_ic/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm_tot_ic/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm_tot_ic/{domain.name}"
-
-    if not os.path.exists(problem_folder):
-        os.system(f"mkdir -p {problem_folder}")
-    if not os.path.exists(plan_folder):
-        os.system(f"mkdir -p {plan_folder}")
-    if not os.path.exists(result_folder):
-        os.system(f"mkdir -p {result_folder}")
-
-    task = args.task
-
-    start_time = time.time()
-
-    # A. generate problem pddl file
-    task_suffix        = domain.get_task_suffix(task)
-    task_nl, task_pddl = domain.get_task(task)
-    text_plan = planner.tot_bfs(task_nl, domain_nl, context, time_left=200, max_depth=10)
-
-    # B. write the problem file into the problem folder
-    text_plan_file_name = f"./experiments/run{args.run}/results/llm_tot_ic/{task_suffix}"
-    with open(text_plan_file_name, "w") as f:
-        f.write(text_plan)
-    end_time = time.time()
-    print(f"[info] task {task} takes {end_time - start_time} sec")
-
-
-def llm_ic_planner(args, planner, domain):
-    """
-    Baseline method:
-        The LLM will be asked to directly give a plan based on the task description.
-    """
-
-    def aux(task_suffix, task_nl):
         start_time = time.time()
 
-        # A. generate problem pddl file
+        planner.set_context(context)
+        plan, task_pddl = planner.run_planner(task_nl, domain_nl, domain_pddl)
 
-        prompt             = planner.create_llm_ic_prompt(task_nl, domain_nl, context)
-        text_plan          = planner.query(prompt)
-
-        # B. write the problem file into the problem folder
-        text_plan_file_name = f"./experiments/run{args.run}/results/llm_ic/{task_suffix}"
-        with open(text_plan_file_name, "w") as f:
-            f.write(text_plan)
         end_time = time.time()
+
+        if (task_pddl):
+            task_pddl_file_name = f"./experiments/run{args.run}/problems/{method}/{task_suffix}"
+            with open(task_pddl_file_name, "w") as f:
+                f.write(task_pddl)
+
+        plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{task_suffix}"
+        with open(plan_pddl_file_name, "w") as f:
+            f.write(plan)
+
         print(f"[info] task {task} takes {end_time - start_time} sec")
-
-    context          = domain.get_context()
-    domain_pddl      = domain.get_domain_pddl()
-    domain_pddl_file = domain.get_domain_pddl_file()
-    domain_nl        = domain.get_domain_nl()
-    domain_nl_file   = domain.get_domain_nl_file()
-
-    # create the tmp / result folders
-    problem_folder = f"./experiments/run{args.run}/problems/llm_ic/{domain.name}"
-    plan_folder    = f"./experiments/run{args.run}/plans/llm_ic/{domain.name}"
-    result_folder  = f"./experiments/run{args.run}/results/llm_ic/{domain.name}"
-
-    os.makedirs(problem_folder, exist_ok=True)
-    os.makedirs(plan_folder, exist_ok=True)
-    os.makedirs(result_folder, exist_ok=True)
-
-    task = args.task
-
-    if(args.command == "robustness-experiment"):
-
-        perturbations_folder = f"./experiments/run{args.run}/perturbed_descriptions/"
-
-        task_suffix = domain.get_task_suffix(task)
-        task_suffix = os.path.splitext(task_suffix)[0]
-
-        for fn in glob.glob(f"{perturbations_folder}/{task_suffix}_*"):
-            perturbed_task_suffix = f"{domain.name}/{os.path.splitext(os.path.basename(fn))[0]}.pddl"
-            with open(fn, "r") as f:
-                perturbed_task_nl = f.read()
-                aux(perturbed_task_suffix, perturbed_task_nl)
-
-    else:
-        task_suffix = domain.get_task_suffix(task)
-        task_nl, _ = domain.get_task(task) 
-        aux(task_suffix, task_nl)
 
 def print_all_prompts(planner):
     for domain_name in DOMAINS:
@@ -831,11 +639,11 @@ def create_parser():
 
     # Add additional arguments specific to robustness experiment
     robustness_parser.add_argument('--method', type=str, choices=["llm_ic_pddl_planner",
-                                                                    # "llm_pddl_planner",
-                                                                    # "llm_planner",
-                                                                    # "llm_stepbystep_planner",
+                                                                    "llm_pddl_planner",
+                                                                    "llm_planner",
+                                                                    "llm_stepbystep_planner",
                                                                     "llm_ic_planner",
-                                                                    # "llm_tot_ic_planner"
+                                                                    "llm_tot_ic_planner"
                                                                     ],
                                                                     default="llm_ic_pddl_planner",
                                                                     nargs="+"
@@ -902,28 +710,26 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(args_filepath))
     save_args_to_file(args, args_filepath)
 
-    # 1. initialize problem domain
+    # initialize problem domain
     domain = eval(args.domain.capitalize())()
 
-    # 2. initialize the planner
-    planner = Planner()
-
-    # 3. Produce perturbations if needed
+    # Produce perturbations if needed
     if args.command == "robustness-experiment":
         produce_perturbations(args, domain)
 
-    # 4. execute the llm planner
-    available_methods = {
-        "llm_ic_pddl_planner"   : llm_ic_pddl_planner,
-        "llm_pddl_planner"      : llm_pddl_planner,
-        "llm_planner"           : llm_planner,
-        "llm_stepbystep_planner": llm_stepbystep_planner,
-        "llm_ic_planner"        : llm_ic_planner,
-        "llm_tot_ic_planner"       : llm_tot_ic_planner,
+    # execute the llm planner
+    available_planners = {
+        "llm_ic_pddl_planner"   : LlmIcPddlPlanner(),
+        "llm_pddl_planner"      : LlmPddlPlanner(),
+        "llm_planner"           : LlmPlanner(),
+        "llm_ic_planner"        : LlmIcPlanner(),
+        "llm_stepbystep_planner": LlmSbSPlanner(),
+        "llm_tot_ic_planner"    : LlmTotPlanner()
+        
     }
 
     if args.print_prompts:
         print_all_prompts(planner)
     else:
         for method in args.method:
-            available_methods[method](args, planner, domain)
+            run_experiment(args, method, available_planners[method], domain)
