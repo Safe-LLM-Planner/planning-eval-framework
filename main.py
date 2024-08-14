@@ -332,7 +332,7 @@ class LlmIcPlanner(BaseLlmPlanner):
                  f"sequence of behaviors, to solve the problem?"
         return prompt
 
-class LlmSbSPlanner(BaseLlmPlanner):
+class LlmSbSPlanner(LlmPlanner):
     """
     Baseline method:
         The LLM will be asked to directly give a plan based on the task description.
@@ -340,12 +340,9 @@ class LlmSbSPlanner(BaseLlmPlanner):
 
     def _create_prompt(self, task_nl, domain_nl):
         # Baseline 1 (LLM-as-P): directly ask the LLM for plan
-        prompt = f"{domain_nl} \n" + \
-                 f"Now consider a planning problem. " + \
-                 f"The problem description is: \n {task_nl} \n" + \
-                 f"Can you provide a correct plan, in the way of a " + \
-                 f"sequence of behaviors, to solve the problem? \n" + \
-                 f"Please think step by step."
+
+        prompt = super()._create_prompt(task_nl, domain_nl)
+        prompt += " \nPlease think step by step."
         return prompt
 
 class LlmTotPlanner(BasePlanner):
@@ -462,6 +459,16 @@ class LlmTotPlanner(BasePlanner):
 
         return prompt
 
+available_planners = {
+    "llm_ic_pddl"   : LlmIcPddlPlanner(),
+    "llm_pddl"      : LlmPddlPlanner(),
+    "llm"           : LlmPlanner(),
+    "llm_ic"        : LlmIcPlanner(),
+    "llm_stepbystep": LlmSbSPlanner(),
+    "llm_tot_ic"    : LlmTotPlanner()
+    
+}
+
 def run_experiment(args, method, planner: BasePlanner, domain):
 
     context          = domain.get_context()
@@ -532,7 +539,7 @@ def run_experiment(args, method, planner: BasePlanner, domain):
 
         print(f"[info] task {task} takes {end_time - start_time} sec")
 
-def print_all_prompts(planner):
+def print_all_prompts():
     for domain_name in DOMAINS:
         domain = eval(domain_name.capitalize())()
         context = domain.get_context()
@@ -540,35 +547,23 @@ def print_all_prompts(planner):
         domain_pddl_file = domain.get_domain_pddl_file()
         domain_nl = domain.get_domain_nl()
         
-        for folder_name in [
-            f"./prompts/llm/{domain.name}",
-            f"./prompts/llm_step/{domain.name}",
-            f"./prompts/llm_ic/{domain.name}",
-            f"./prompts/llm_pddl/{domain.name}",
-            f"./prompts/llm_ic_pddl/{domain.name}"]:
-            if not os.path.exists(folder_name):
-                os.system(f"mkdir -p {folder_name}")
+        folders = [ f"./prompts/{method}/{domain.name}" for method in available_planners.keys() if method != "llm_tot_ic"]
+        for folder_name in folders:
+            os.makedirs(folder_name, exist_ok=True)
 
         for task in range(len(domain)):
             task_nl_file, task_pddl_file = domain.get_task_file(task) 
             task_nl, task_pddl = domain.get_task(task) 
             task_suffix = domain.get_task_suffix(task)
 
-            llm_prompt = planner.create_llm_prompt(task_nl, domain_nl)
-            llm_stepbystep_prompt = planner.create_llm_stepbystep_prompt(task_nl, domain_nl)
-            llm_ic_prompt = planner.create_llm_ic_prompt(task_nl, domain_nl, context)
-            llm_pddl_prompt = planner.create_llm_pddl_prompt(task_nl, domain_nl)
-            llm_ic_pddl_prompt = planner.create_llm_ic_pddl_prompt(task_nl, domain_pddl, context)
-            with open(f"./prompts/llm/{task_suffix}.prompt", "w") as f:
-                f.write(llm_prompt)
-            with open(f"./prompts/llm_step/{task_suffix}.prompt", "w") as f:
-                f.write(llm_stepbystep_prompt)
-            with open(f"./prompts/llm_ic/{task_suffix}.prompt", "w") as f:
-                f.write(llm_ic_prompt)
-            with open(f"./prompts/llm_pddl/{task_suffix}.prompt", "w") as f:
-                f.write(llm_pddl_prompt)
-            with open(f"./prompts/llm_ic_pddl/{task_suffix}.prompt", "w") as f:
-                f.write(llm_ic_pddl_prompt)
+            for method in available_planners:
+                if method != "llm_tot_ic":
+                    planner = available_planners[method]
+                    planner.set_context(context)
+                    prompt = planner._create_prompt(task_nl, domain_nl)
+
+                    with open(f"./prompts/{method}/{task_suffix}.prompt", "w") as f:
+                        f.write(prompt)
 
 def produce_perturbations(args, domain):
 
@@ -619,13 +614,13 @@ def create_parser():
     common_args = create_common_args()
     
     parser = argparse.ArgumentParser(description="LLM-Planner", parents=[common_args])
-    parser.add_argument('--method', type=str, choices=["llm_ic_pddl_planner",
-                                                        "llm_pddl_planner",
-                                                        "llm_planner",
-                                                        "llm_stepbystep_planner",
-                                                        "llm_ic_planner",
-                                                        "llm_tot_ic_planner"],
-                                                        default="llm_ic_pddl_planner",
+    parser.add_argument('--method', type=str, choices=["llm_ic_pddl",
+                                                        "llm_pddl",
+                                                        "llm",
+                                                        "llm_stepbystep",
+                                                        "llm_ic",
+                                                        "llm_tot_ic"],
+                                                        default="llm_ic_pddl",
                                                         nargs="+"
                                                         )
     
@@ -638,14 +633,14 @@ def create_parser():
                                               parents=[common_args])
 
     # Add additional arguments specific to robustness experiment
-    robustness_parser.add_argument('--method', type=str, choices=["llm_ic_pddl_planner",
-                                                                    "llm_pddl_planner",
-                                                                    "llm_planner",
-                                                                    "llm_stepbystep_planner",
-                                                                    "llm_ic_planner",
-                                                                    "llm_tot_ic_planner"
+    robustness_parser.add_argument('--method', type=str, choices=["llm_ic_pddl",
+                                                                    "llm_pddl",
+                                                                    "llm",
+                                                                    "llm_stepbystep",
+                                                                    "llm_ic",
+                                                                    "llm_tot_ic"
                                                                     ],
-                                                                    default="llm_ic_pddl_planner",
+                                                                    default="llm_ic_pddl",
                                                                     nargs="+"
                                                                     )
     robustness_parser.add_argument('--perturbation-recipe', type=str, choices=[
@@ -718,18 +713,9 @@ if __name__ == "__main__":
         produce_perturbations(args, domain)
 
     # execute the llm planner
-    available_planners = {
-        "llm_ic_pddl_planner"   : LlmIcPddlPlanner(),
-        "llm_pddl_planner"      : LlmPddlPlanner(),
-        "llm_planner"           : LlmPlanner(),
-        "llm_ic_planner"        : LlmIcPlanner(),
-        "llm_stepbystep_planner": LlmSbSPlanner(),
-        "llm_tot_ic_planner"    : LlmTotPlanner()
-        
-    }
 
     if args.print_prompts:
-        print_all_prompts(planner)
+        print_all_prompts()
     else:
         for method in args.method:
             run_experiment(args, method, available_planners[method], domain)
