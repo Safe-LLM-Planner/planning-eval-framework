@@ -8,18 +8,6 @@ from utils import postprocess
 #
 ###############################################################################
 
-DOMAINS = [
-    "barman",
-    "blocksworld",
-    "floortile",
-    "grippers",
-    "storage",
-    "termes",
-    "tyreworld",
-    "manipulation"
-]
-
-
 class Domain:
     def __init__(self):
         # every domain should contain the context as in "in-context learning" (ICL)
@@ -122,3 +110,14 @@ class Blocksworld(Domain):
 
 class Manipulation(Domain):
     name = "manipulation" # this should match the directory name
+
+available_domains = {
+    "barman": Barman(),
+    "blocksworld": Blocksworld(),
+    "floortile": Floortile(),
+    "grippers": Grippers(),
+    "storage": Storage(),
+    "termes": Termes(),
+    "tyreworld": Tyreworld(),
+    "manipulation": Manipulation()
+}
