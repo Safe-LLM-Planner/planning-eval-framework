@@ -15,6 +15,7 @@ from planners import (
     LlmSbSPlanner, 
     LlmTotPlanner
 )
+from plan_evaluator import PlanEvaluator, PlanGreedyActionMatcher, PlanIndividualObjectMatcher
 from domains import (
     DOMAINS,
     Barman,
@@ -37,6 +38,52 @@ available_planners = {
     
 }
 
+def run_planner(context, 
+                task_nl,
+                domain_nl,
+                domain_pddl,
+                method,
+                planner,
+                task_suffix,
+                task,
+                ground_truth_task_pddl):
+
+    start_time = time.time()
+
+    planner.set_context(context)
+    produced_plan, task_pddl = planner.run_planner(task_nl, domain_nl, domain_pddl)
+
+    end_time = time.time()
+
+    if (task_pddl):
+        task_pddl_file_name = f"./experiments/run{args.run}/problems/{method}/{task_suffix}"
+        with open(task_pddl_file_name, "w") as f:
+            f.write(task_pddl)
+
+    plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{task_suffix}"
+    with open(plan_pddl_file_name, "w") as f:
+        f.write(produced_plan)
+
+    print(f"[info] task {task} takes {end_time - start_time} sec")
+
+    plan_matcher = PlanIndividualObjectMatcher(domain_pddl, ground_truth_task_pddl)
+    closest_plan = plan_matcher.plan_closest_match(produced_plan)
+    closest_plan_plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{task_suffix}.closest"
+    with open(closest_plan_plan_pddl_file_name, "w") as f:
+        f.write(closest_plan)
+    evaluator = PlanEvaluator(domain_pddl,ground_truth_task_pddl,closest_plan)
+    evaluator.try_simulation()
+    is_valid = evaluator.is_valid()
+    is_successful = None
+    is_safe = None
+    if(is_valid):
+        is_successful = evaluator.is_successful()
+        is_safe = evaluator.is_safe()
+
+    print(f"valid: {is_valid}, successful: {is_successful}, safe: {is_safe}")
+
+
+
 def run_experiment(args, method, planner: BasePlanner, domain):
 
     context          = domain.get_context()
@@ -44,6 +91,9 @@ def run_experiment(args, method, planner: BasePlanner, domain):
     domain_pddl_file = domain.get_domain_pddl_file()
     domain_nl        = domain.get_domain_nl()
     domain_nl_file   = domain.get_domain_nl_file()
+    
+    task = args.task
+    task_nl, ground_truth_task_pddl = domain.get_task(task) 
 
     # create the tmp / result folders
     problem_folder = f"./experiments/run{args.run}/problems/{method}/{domain.name}"
@@ -51,8 +101,6 @@ def run_experiment(args, method, planner: BasePlanner, domain):
 
     os.makedirs(problem_folder, exist_ok=True)
     os.makedirs(plan_folder, exist_ok=True)
-
-    task = args.task
 
     if(args.command == "robustness-experiment"):
 
@@ -66,45 +114,28 @@ def run_experiment(args, method, planner: BasePlanner, domain):
             with open(fn, "r") as f:
                 perturbed_task_nl = f.read()
                 
-                start_time = time.time()
-
-                planner.set_context(context)
-                plan, task_pddl = planner.run_planner(perturbed_task_nl, domain_nl, domain_pddl)
-
-                end_time = time.time()
-
-                if (task_pddl):
-                    task_pddl_file_name = f"./experiments/run{args.run}/problems/{method}/{perturbed_task_suffix}"
-                    with open(task_pddl_file_name, "w") as f:
-                        f.write(task_pddl)
-
-                plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{perturbed_task_suffix}"
-                with open(plan_pddl_file_name, "w") as f:
-                    f.write(plan)
-
-                print(f"[info] task {task} takes {end_time - start_time} sec")
+                run_planner(context,
+                            perturbed_task_nl,
+                            domain_nl,
+                            domain_pddl,
+                            method,
+                            planner,
+                            perturbed_task_suffix,
+                            task,
+                            ground_truth_task_pddl)
 
     else:
         task_suffix = domain.get_task_suffix(task)
-        task_nl, _ = domain.get_task(task) 
         
-        start_time = time.time()
-
-        planner.set_context(context)
-        plan, task_pddl = planner.run_planner(task_nl, domain_nl, domain_pddl)
-
-        end_time = time.time()
-
-        if (task_pddl):
-            task_pddl_file_name = f"./experiments/run{args.run}/problems/{method}/{task_suffix}"
-            with open(task_pddl_file_name, "w") as f:
-                f.write(task_pddl)
-
-        plan_pddl_file_name = f"./experiments/run{args.run}/plans/{method}/{task_suffix}"
-        with open(plan_pddl_file_name, "w") as f:
-            f.write(plan)
-
-        print(f"[info] task {task} takes {end_time - start_time} sec")
+        run_planner(context,
+                    task_nl,
+                    domain_nl,
+                    domain_pddl,
+                    method,
+                    planner,
+                    task_suffix,
+                    task,
+                    ground_truth_task_pddl)
 
 def print_all_prompts():
     for domain_name in DOMAINS:
