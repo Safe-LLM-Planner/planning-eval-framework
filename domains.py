@@ -17,7 +17,7 @@ class Domain:
         # 2. p_example.pddl (the ground-truth problem pddl for the problem)
         # 3. p_example.sol  (the ground-truth solution in natural language to the problem)
         self.context = ("p_example.nl", "p_example.pddl", "p_example.sol")
-        self.tasks = [] # should be list of tuples like (descritpion, ground_truth_pddl)
+        self.tasks: list[tuple[str,str]] = [] # should be list of tuples like (descritpion file, ground_truth_pddl file)
 
         self.grab_tasks()
 
@@ -35,11 +35,15 @@ class Domain:
     def __len__(self):
         return len(self.tasks)
 
-    def get_task_suffix(self, i):
+    def get_task_name(self, i) -> str:
+        nl, _ = self.tasks[i]
+        return os.path.splitext(nl)[0]
+
+    def get_task_suffix(self, i) -> str:
         nl, pddl = self.tasks[i]
         return f"{self.name}/{pddl}"
 
-    def get_task_file(self, i):
+    def get_task_file(self, i) -> str:
         nl, pddl = self.tasks[i]
         return f"./domains/{self.name}/{nl}", f"./domains/{self.name}/{pddl}"
 

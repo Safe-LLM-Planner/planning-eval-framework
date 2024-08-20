@@ -93,8 +93,11 @@ class PlanGreedyActionMatcher(PlanMatcher):
                 available_actions = jl.PDDL.available(self.domain, current_state)
                 available_actions = [a for a in available_actions if a.name == act.name]
                 closest_match = self._action_closest_match(act, available_actions)
-            acts_closest_match.append(closest_match)
-            current_state = jl.PDDL.execute(self.domain, current_state, closest_match)
+            if(closest_match):
+                current_state = jl.PDDL.execute(self.domain, current_state, closest_match)
+                acts_closest_match.append(closest_match)
+            else:
+                break
             
         res_pddl_text = "\n".join([jl.PDDL.write_pddl(act) for act in acts_closest_match])
         
