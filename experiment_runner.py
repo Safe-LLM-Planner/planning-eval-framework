@@ -5,7 +5,7 @@ import textattack
 import time
 
 from domains import Domain
-from planners import available_planners
+from planners import available_planners, PlannerResult
 from plan_evaluator import PlanEvaluator, PlanGreedyActionMatcher, PlanIndividualObjectMatcher
 
 available_textattack_perturbations = {
@@ -36,8 +36,8 @@ class ExperimentRunner():
                     produced_plan = self.run_planner(method, perturbed_task_nl, perturbed_task_name, task)
                     self.run_evaluator(produced_plan, task, perturbed_task_name, method)
         else:
-            produced_plan = self.run_planner(method, task_nl, task_name, task)
-            self.run_evaluator(produced_plan, task, task_name, method)
+            planner_result: PlannerResult = self.run_planner(method, task_nl, task_name, task)
+            self.run_evaluator(planner_result, task, task_name, method)
 
     def run_planner(self, method, task_nl, task_name, task):
 
@@ -71,14 +71,15 @@ class ExperimentRunner():
             with open(produced_task_pddl_file_name, "w") as f:
                 f.write(planner_result.task_pddl)
 
-        plan_pddl_file_name = f"{plan_folder}/{task_name}.pddl"
-        with open(plan_pddl_file_name, "w") as f:
-            f.write(planner_result.plan_pddl)
+        if (planner_result.plan_pddl):
+            plan_pddl_file_name = f"{plan_folder}/{task_name}.pddl"
+            with open(plan_pddl_file_name, "w") as f:
+                f.write(planner_result.plan_pddl)
 
         print(f"[info] task {task} takes {end_time - start_time} sec")
-        return planner_result.plan_pddl
+        return planner_result
 
-    def run_evaluator(self, produced_plan, task, task_name, method):
+    def run_evaluator(self, planner_result: PlannerResult, task, task_name, method):
 
         domain_pddl = self.domain.get_domain_pddl()
         _, ground_truth_task_pddl = self.domain.get_task(task)
@@ -87,7 +88,7 @@ class ExperimentRunner():
         os.makedirs(evaluation_folder, exist_ok=True)
 
         plan_matcher = PlanGreedyActionMatcher(domain_pddl, ground_truth_task_pddl)
-        closest_plan = plan_matcher.plan_closest_match(produced_plan)
+        closest_plan = plan_matcher.plan_closest_match(planner_result)
         closest_plan_pddl_file_name = f"{evaluation_folder}/{task_name}.pddl.closest"
         with open(closest_plan_pddl_file_name, "w") as f:
             f.write(closest_plan)

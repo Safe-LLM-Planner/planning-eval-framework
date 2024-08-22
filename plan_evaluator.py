@@ -1,4 +1,7 @@
+import json
+
 from juliacall import Main as jl
+from planners import PlannerResult
 from sentence_transformers import SentenceTransformer
 from utils import openai_client
 
@@ -63,8 +66,8 @@ class PlanMatcher:
         self.domain = jl.PDDL.parse_domain(domain_pddl)
         self.problem = jl.PDDL.parse_problem(problem_pddl)
 
-    def plan_closest_match(self, plan_pddl):
-        pass
+    def plan_closest_match(self, planner_result: PlannerResult):
+        raise NotImplementedError
 
     @staticmethod
     def _build_action(name, args):
@@ -79,7 +82,34 @@ class PlanMatcher:
         return similarity
 
 class PlanGreedyActionMatcher(PlanMatcher):
-    def plan_closest_match(self, plan_pddl):
+    def plan_closest_match(self, planner_result: PlannerResult):
+        if(planner_result.plan_pddl):
+            return self._plan_closest_match_pddl(planner_result.plan_pddl)
+        elif(planner_result.plan_json):
+            return self._plan_closest_match_json(planner_result.plan_json)
+        else:
+            raise ValueError("No plan was given as input")
+    
+    def _plan_closest_match_json(self, plan_json):
+        plan_dict = json.loads(plan_json)
+        actions_texts = [ " ".join(step.values()) for step in plan_dict['steps']]
+        
+        current_state = jl.PDDL.initstate(self.domain, self.problem)
+        acts_closest_match = []
+        for act_text in actions_texts:
+            available_actions = jl.PDDL.available(self.domain, current_state)
+            closest_match = self._action_closest_match(act_text, available_actions)
+            if(closest_match):
+                current_state = jl.PDDL.execute(self.domain, current_state, closest_match)
+                acts_closest_match.append(closest_match)
+            else:
+                break
+            
+        res_pddl_text = "\n".join([jl.PDDL.write_pddl(act) for act in acts_closest_match])
+        
+        return res_pddl_text
+
+    def _plan_closest_match_pddl(self, plan_pddl):
         actions = [jl.PDDL.Parser.parse_pddl(line) 
                     for line in plan_pddl.splitlines()
                     if line.strip()[0] != ";"]
@@ -91,8 +121,7 @@ class PlanGreedyActionMatcher(PlanMatcher):
                 closest_match = act
             else:
                 available_actions = jl.PDDL.available(self.domain, current_state)
-                available_actions = [a for a in available_actions if a.name == act.name]
-                closest_match = self._action_closest_match(act, available_actions)
+                closest_match = self._action_closest_match(self._action_text(act), available_actions)
             if(closest_match):
                 current_state = jl.PDDL.execute(self.domain, current_state, closest_match)
                 acts_closest_match.append(closest_match)
@@ -103,40 +132,33 @@ class PlanGreedyActionMatcher(PlanMatcher):
         
         return res_pddl_text
 
-    def _action_closest_match(self, action, available_actions):
-
-        action_text = " ".join([str(a) for a in action.args])
+    def _action_closest_match(self, action_text, available_actions):
+        # action_text = self._action_text(action)
         current_similarity = -1
         res = None
         for act in available_actions:
-            act_text = " ".join([str(a) for a in act.args])
+            act_text = self._action_text(act)
             similarity = self._compute_similarity(action_text, act_text)
             if similarity > current_similarity:
                 res = act
                 current_similarity = similarity
         return res
 
-    def _action_closest_match2(self, action, available_actions):
-
-        action_text = " ".join([str(a) for a in action.args])
-        current_similarity = -1
-        res = None
-        for act in available_actions:
-            act_text = " ".join([str(a) for a in act.args])
-            similarity = self._compute_similarity(action_text, act_text)
-            if similarity > current_similarity:
-                res = act
-                current_similarity = similarity
-        return res
+    def _action_text(self, action):
+        return " ".join([str(action.name)] + [str(a) for a in action.args])
 
 class PlanIndividualObjectMatcher(PlanMatcher):
     def __init__(self, domain_pddl, problem_pddl):
         super().__init__(domain_pddl, problem_pddl)
         self.objects = jl.PDDL.get_objtypes(self.problem)
         
-    def plan_closest_match(self, plan_pddl):
+    def plan_closest_match(self, planner_result: PlannerResult):
+
+        if not planner_result.plan_pddl:
+            raise ValueError("This plan matcher requires the planner result to be in pddl format")
+
         actions = [jl.PDDL.Parser.parse_pddl(line) 
-                    for line in plan_pddl.splitlines()
+                    for line in planner_result.plan_pddl.splitlines()
                     if line.strip()[0] != ";"]
         acts_closest_match = [self._action_closest_match(act) for act in actions]
         res_pddl_text = "\n".join([jl.PDDL.write_pddl(act) for act in acts_closest_match])
