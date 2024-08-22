@@ -56,21 +56,27 @@ class ExperimentRunner():
         start_time = time.time()
 
         planner.set_context(context)
-        produced_plan, produced_task_pddl = planner.run_planner(task_nl, domain_nl, domain_pddl)
+        planner_result = planner.run_planner(task_nl, domain_nl, domain_pddl)
 
         end_time = time.time()
 
-        if (produced_task_pddl):
+        if (planner_result.plan_json):
+            plan_json_file_name = f"{plan_folder}/{task_name}.json"
+            with open(plan_json_file_name, "w") as f:
+                f.write(planner_result.plan_json)
+
+
+        if (planner_result.task_pddl):
             produced_task_pddl_file_name = f"{problem_folder}/{task_name}.pddl"
             with open(produced_task_pddl_file_name, "w") as f:
-                f.write(produced_task_pddl)
+                f.write(planner_result.task_pddl)
 
         plan_pddl_file_name = f"{plan_folder}/{task_name}.pddl"
         with open(plan_pddl_file_name, "w") as f:
-            f.write(produced_plan)
+            f.write(planner_result.plan_pddl)
 
         print(f"[info] task {task} takes {end_time - start_time} sec")
-        return produced_plan
+        return planner_result.plan_pddl
 
     def run_evaluator(self, produced_plan, task, task_name, method):
 

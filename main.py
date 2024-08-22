@@ -9,12 +9,18 @@ from planners import available_planners
 
 import argparse
 
+def positive_int(value):
+    ivalue = int(value)
+    if ivalue <= 0:
+        raise argparse.ArgumentTypeError(f"Invalid value: {value}. It must be an integer greater than 0.")
+    return ivalue
+
 def create_common_args():
     common_args = argparse.ArgumentParser(add_help=False)
     common_group = common_args.add_argument_group('common arguments')
     common_group.add_argument('--domain', type=str, choices=available_domains.keys())
     common_group.add_argument('--time-limit', type=int, default=200)
-    common_group.add_argument('--task', type=int, default=0)
+    common_group.add_argument('--task', type=positive_int, )
     common_group.add_argument('--run', type=int, default=-1)
     common_group.add_argument('--print-prompts', action='store_true')
     common_group.add_argument('--method', type=str, choices=available_planners.keys(), nargs="+")

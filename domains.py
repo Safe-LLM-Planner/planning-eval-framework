@@ -34,17 +34,19 @@ class Domain:
 
     def __len__(self):
         return len(self.tasks)
+    
+    # task number i is a 1-based index
 
     def get_task_name(self, i) -> str:
-        nl, _ = self.tasks[i]
+        nl, _ = self.tasks[i-1]
         return os.path.splitext(nl)[0]
 
     def get_task_suffix(self, i) -> str:
-        nl, pddl = self.tasks[i]
+        nl, pddl = self.tasks[i-1]
         return f"{self.name}/{pddl}"
 
     def get_task_file(self, i) -> str:
-        nl, pddl = self.tasks[i]
+        nl, pddl = self.tasks[i-1]
         return f"./domains/{self.name}/{nl}", f"./domains/{self.name}/{pddl}"
 
     def get_task(self, i):
