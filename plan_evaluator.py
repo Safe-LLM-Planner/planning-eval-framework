@@ -178,3 +178,8 @@ class PlanIndividualObjectMatcher(PlanMatcher):
                 res = obj
                 current_similarity = similarity
         return res
+
+available_plan_matchers = {
+    "greedy_action": PlanGreedyActionMatcher,
+    "individual_object": PlanIndividualObjectMatcher
+}

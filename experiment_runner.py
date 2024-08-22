@@ -6,7 +6,7 @@ import time
 
 from domains import Domain
 from planners import available_planners, PlannerResult
-from plan_evaluator import PlanEvaluator, PlanGreedyActionMatcher, PlanIndividualObjectMatcher
+from plan_evaluator import PlanEvaluator, available_plan_matchers
 
 available_textattack_perturbations = {
     "wordnet": textattack.augmentation.recipes.WordNetAugmenter,
@@ -20,8 +20,14 @@ class ExperimentRunner():
         self.args = args
         self.domain = domain
 
-    def run_experiment(self, method: str):
-        
+    def set_experiment(self, planner_name: str, 
+                             response_model_generator_name: str, 
+                             plan_matcher_name: str):
+        self.planner_name = planner_name
+        self.response_model_generator_name = response_model_generator_name
+        self.plan_matcher_name = plan_matcher_name
+
+    def run_experiment(self):
         task = self.args.task
         task_nl, _ = self.domain.get_task(task) 
         task_name = self.domain.get_task_name(task)
@@ -33,17 +39,17 @@ class ExperimentRunner():
                 perturbed_task_name = os.path.splitext(os.path.basename(fn))[0]
                 with open(fn, "r") as f:
                     perturbed_task_nl = f.read()
-                    produced_plan = self.run_planner(method, perturbed_task_nl, perturbed_task_name, task)
-                    self.run_evaluator(produced_plan, task, perturbed_task_name, method)
+                    produced_plan = self.run_planner(perturbed_task_nl, perturbed_task_name, task)
+                    self.run_evaluator(produced_plan, task, perturbed_task_name)
         else:
-            planner_result: PlannerResult = self.run_planner(method, task_nl, task_name, task)
-            self.run_evaluator(planner_result, task, task_name, method)
+            planner_result: PlannerResult = self.run_planner(task_nl, task_name, task)
+            self.run_evaluator(planner_result, task, task_name)
 
-    def run_planner(self, method, task_nl, task_name, task):
+    def run_planner(self, task_nl, task_name, task):
 
         # create result folders
-        problem_folder = f"./experiments/run{self.args.run}/problems/{method}/{self.domain.name}"
-        plan_folder    = f"./experiments/run{self.args.run}/plans/{method}/{self.domain.name}"
+        problem_folder = f"./experiments/run{self.args.run}/problems/{self.planner_name}/{self.domain.name}"
+        plan_folder    = f"./experiments/run{self.args.run}/plans/{self.planner_name}/{self.domain.name}"
         os.makedirs(problem_folder, exist_ok=True)
         os.makedirs(plan_folder, exist_ok=True)
 
@@ -51,11 +57,12 @@ class ExperimentRunner():
         context = self.domain.get_context()
         domain_pddl = self.domain.get_domain_pddl()
         domain_nl = self.domain.get_domain_nl()
-        planner = available_planners[method]
+        planner = available_planners[self.planner_name]
 
         start_time = time.time()
 
         planner.set_context(context)
+        planner.set_response_model_generator(self.response_model_generator_name)
         planner_result = planner.run_planner(task_nl, domain_nl, domain_pddl)
 
         end_time = time.time()
@@ -79,15 +86,15 @@ class ExperimentRunner():
         print(f"[info] task {task} takes {end_time - start_time} sec")
         return planner_result
 
-    def run_evaluator(self, planner_result: PlannerResult, task, task_name, method):
+    def run_evaluator(self, planner_result: PlannerResult, task, task_name):
 
         domain_pddl = self.domain.get_domain_pddl()
         _, ground_truth_task_pddl = self.domain.get_task(task)
 
-        evaluation_folder = f"./experiments/run{self.args.run}/evaluation/{method}/{self.domain.name}"
+        evaluation_folder = f"./experiments/run{self.args.run}/evaluation/{self.planner_name}/{self.domain.name}"
         os.makedirs(evaluation_folder, exist_ok=True)
 
-        plan_matcher = PlanGreedyActionMatcher(domain_pddl, ground_truth_task_pddl)
+        plan_matcher = available_plan_matchers[self.plan_matcher_name](domain_pddl, ground_truth_task_pddl)
         closest_plan = plan_matcher.plan_closest_match(planner_result)
         closest_plan_pddl_file_name = f"{evaluation_folder}/{task_name}.pddl.closest"
         with open(closest_plan_pddl_file_name, "w") as f:
@@ -133,7 +140,7 @@ def print_all_prompts():
         domain_pddl = domain.get_domain_pddl()
         domain_nl = domain.get_domain_nl()
         
-        folders = [ f"./prompts/{method}/{domain.name}" for method in available_planners.keys() if method != "llm_tot_ic"]
+        folders = [ f"./prompts/{planner_name}/{domain.name}" for planner_name in available_planners.keys() if planner_name != "llm_tot_ic"]
         for folder_name in folders:
             os.makedirs(folder_name, exist_ok=True)
 
@@ -142,11 +149,11 @@ def print_all_prompts():
             task_nl, task_pddl = domain.get_task(task) 
             task_suffix = domain.get_task_suffix(task)
 
-            for method in available_planners:
-                if method != "llm_tot_ic":
-                    planner = available_planners[method]
+            for planner_name in available_planners:
+                if planner_name != "llm_tot_ic":
+                    planner = available_planners[planner_name]
                     planner.set_context(context)
                     prompt = planner._create_prompt(task_nl, domain_nl)
 
-                    with open(f"./prompts/{method}/{task_suffix}.prompt", "w") as f:
+                    with open(f"./prompts/{planner_name}/{task_suffix}.prompt", "w") as f:
                         f.write(prompt)
