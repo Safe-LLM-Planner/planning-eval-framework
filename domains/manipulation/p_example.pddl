@@ -4,7 +4,6 @@
 coffee-table side-table recycle-bin pantry - location
 mustard-bottle - object)
 (:init
-(= (total-cost) 0)
 (= (distance coffee-table coffee-table) 0)
 (= (distance side-table side-table) 0)
 (= (distance recycle-bin recycle-bin) 0)
@@ -30,5 +29,4 @@ mustard-bottle - object)
 (at mustard-bottle side-table)
 )
 )
-(:metric minimize (total-cost))
 )

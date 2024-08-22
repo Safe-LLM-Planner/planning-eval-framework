@@ -5,5 +5,5 @@ The distance between side table and recycle bin is 1. The distance between side 
 You are at the recycle bin.
 There is a mustard bottle on the pantry.
 Your hand is empty.
-Your goal is to move objects to their destinations. You need to minimize the total cost of your plan.
+Your goal is to move objects to their destinations.
 The mustard bottle should be on the side table.

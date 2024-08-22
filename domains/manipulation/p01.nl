@@ -6,6 +6,6 @@ You are at the coffee table.
 There is a mustard bottle on the coffee table.
 There is a soup can on the side table.
 Your hand is empty.
-Your goal is to move objects to their destinations. You need to minimize the total cost of your plan.
+Your goal is to move objects to their destinations.
 The mustard bottle should be on the pantry.
 The soup can should be in the recycle bin.

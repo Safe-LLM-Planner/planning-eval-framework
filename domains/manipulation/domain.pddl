@@ -6,14 +6,12 @@
           (hand-empty)
           (holding ?o - object))
 
-    (:functions (total-cost) (distance ?from - location ?to - location))
-
     (:action go-to
     :parameters  (?from ?to - location)
     :precondition (and  (robot-at ?from))
     :effect (and  (robot-at ?to)
          (not (robot-at ?from))
-         (increase (total-cost) (distance ?from ?to))))
+         ))
 
     (:action pick
     :parameters (?obj - object ?l - location)
