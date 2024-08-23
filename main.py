@@ -6,7 +6,7 @@ import os
 from collections import namedtuple
 from config import DEFAULT_PYD_GENERATORS, DEFAULT_PLAN_MATCHER
 from domains import available_domains
-from experiment_runner import ExperimentRunner, print_all_prompts, available_textattack_perturbations
+from experiment_runner import ExperimentRunner, available_textattack_perturbations
 from planners import available_planners
 from plan_evaluator import available_plan_matchers
 from pydantic_generator import available_pydantic_generators
@@ -50,6 +50,20 @@ method_tuple_help_text = (
             f"Valid Pydantic generators: {list(available_pydantic_generators.keys())}. If only one value is provided, the default for the second value depends on the planner: '{DEFAULT_PYD_GENERATORS}'."
     )
 
+def range_or_single_value_pct(values):
+    if ':' in values:
+        try:
+            start, stop, step = map(float, values.split(':'))
+            pct_list = [i / 10 for i in range(int(start * 10), int(stop * 10) + 1, int(step * 10))]
+            return pct_list
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid range format: {values}. Expected format is start:end:step with float values.")
+    else:
+        try:
+            return [float(values)]
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid float value: {values}. Expected a single float value.")
+
 def create_common_args():
     common_args = argparse.ArgumentParser(add_help=False)
     common_group = common_args.add_argument_group('common arguments')
@@ -58,7 +72,6 @@ def create_common_args():
     common_group.add_argument('--time-limit', type=int, default=200)
     common_group.add_argument('--task', type=positive_int, )
     common_group.add_argument('--run', type=int, default=-1)
-    common_group.add_argument('--print-prompts', action='store_true')
     common_group.add_argument('--method', type=method_tuple, nargs="+", help=method_tuple_help_text)
     return common_args
 
@@ -77,19 +90,9 @@ def create_parser():
 
     # Add additional arguments specific to robustness experiment
     robustness_parser.add_argument('--perturbation-recipe', type=str, choices=available_textattack_perturbations.keys())
-    robustness_parser.add_argument('--pct-words-to-swap', type=restricted_float, help='Percentage of words to transform')
+    robustness_parser.add_argument('--pct-words-to-swap', type=range_or_single_value_pct, help='Percentage of words to transform')
 
     return parser
-
-def restricted_float(x):
-    try:
-        x = float(x)
-    except ValueError:
-        raise argparse.ArgumentTypeError("%r not a floating-point literal" % (x,))
-
-    if x < 0.0 or x > 1.0:
-        raise argparse.ArgumentTypeError("%r not in range [0.0, 1.0]"%(x,))
-    return x
 
 def save_args_to_file(args, filename):
     # Convert args namespace to a dictionary
@@ -138,15 +141,16 @@ if __name__ == "__main__":
     # initialize experiment runner
     exp_runner = ExperimentRunner(args, domain)
 
-    # Produce perturbations if needed
+    # Robustness experiment
     if args.command == "robustness-experiment":
-        exp_runner.produce_perturbations()
-
-    # execute the llm planner
-
-    if args.print_prompts:
-        print_all_prompts()
+        for pct in args.pct_words_to_swap:
+            exp_runner.produce_perturbations(args.perturbation_recipe, pct)
+            # execute the llm planner
+            for (planner_name, pyd_generator) in args.method:
+                exp_runner.set_experiment(planner_name, pyd_generator, args.plan_matcher, pct)
+                exp_runner.run_experiment()
     else:
+        # Non robustness experiment
         for (planner_name, pyd_generator) in args.method:
             exp_runner.set_experiment(planner_name, pyd_generator, args.plan_matcher)
             exp_runner.run_experiment()

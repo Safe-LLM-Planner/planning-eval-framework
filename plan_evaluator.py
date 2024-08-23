@@ -83,9 +83,9 @@ class PlanMatcher:
 
 class PlanGreedyActionMatcher(PlanMatcher):
     def plan_closest_match(self, planner_result: PlannerResult):
-        if(planner_result.plan_pddl):
+        if(planner_result.plan_pddl != None):
             return self._plan_closest_match_pddl(planner_result.plan_pddl)
-        elif(planner_result.plan_json):
+        elif(planner_result.plan_json != None):
             return self._plan_closest_match_json(planner_result.plan_json)
         else:
             raise ValueError("No plan was given as input")
