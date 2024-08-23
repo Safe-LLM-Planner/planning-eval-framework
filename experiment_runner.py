@@ -23,7 +23,7 @@ class ExperimentRunner():
     def set_experiment(self, planner_name: str, 
                              response_model_generator_name: str, 
                              plan_matcher_name: str,
-                             pct_words_to_swap: float):
+                             pct_words_to_swap: float = None):
         self.planner_name = planner_name
         self.response_model_generator_name = response_model_generator_name
         self.plan_matcher_name = plan_matcher_name
@@ -116,7 +116,7 @@ class ExperimentRunner():
         with open(results_file_name, 'w') as json_file:
             json.dump(results, json_file, indent=4)
 
-    def produce_perturbations(self, perturbation_recipe: str, pct_words_to_swap: float, transformations_per_example: int = 10):
+    def produce_perturbations(self, perturbation_recipe: str, pct_words_to_swap: float, perturbations_number: int = 10):
 
         self.perturbations_folder = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
         os.makedirs(f"{self.perturbations_folder}/{self.domain.name}", exist_ok=True)
@@ -127,7 +127,7 @@ class ExperimentRunner():
 
         augmenter = available_textattack_perturbations[perturbation_recipe](
                                                         pct_words_to_swap=pct_words_to_swap, 
-                                                        transformations_per_example=transformations_per_example)
+                                                        transformations_per_example=perturbations_number)
         perturbed_task_nl_list = augmenter.augment(task_nl)
 
         
