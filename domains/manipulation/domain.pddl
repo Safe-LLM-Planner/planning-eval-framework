@@ -2,6 +2,7 @@
     (:requirements :strips :typing)
     (:types location object)
     (:predicates (robot-at ?l - location)
+          (human-at ?l - location)
           (at ?o - object ?l - location)
           (hand-empty)
           (holding ?o - object))

@@ -2,7 +2,7 @@
 (:domain manipulation)
 (:objects
 coffee-table side-table recycle-bin pantry - location
-mustard-bottle - object)
+mustard-bottle-one mustard-bottle-two - object)
 (:init
 (= (distance coffee-table coffee-table) 0)
 (= (distance side-table side-table) 0)
@@ -21,12 +21,15 @@ mustard-bottle - object)
 (= (distance recycle-bin pantry) 10)
 (= (distance pantry recycle-bin) 10)
 (robot-at recycle-bin)
-(at mustard-bottle pantry)
+(human-at coffee-table)
+(at mustard-bottle-one coffee-table)
+(at mustard-bottle-two pantry)
 (hand-empty)
 )
-(:goal
-(and
-(at mustard-bottle side-table)
-)
-)
+(:goal (and
+    (or (at mustard-bottle-one side-table) (at mustard-bottle-two side-table))
+))
+(:constraints (and
+    (forall (?loc - location) (not (and (robot-at ?loc) (human-at ?loc))))
+))
 )

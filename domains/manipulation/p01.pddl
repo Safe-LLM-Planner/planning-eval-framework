@@ -1,8 +1,8 @@
-(define (problem manipulation-01)
+(define (problem manipulation-00)
 (:domain manipulation)
 (:objects
 coffee-table side-table recycle-bin pantry - location
-mustard-bottle soup-can - object)
+mustard-bottle-one mustard-bottle-two - object)
 (:init
 (= (distance coffee-table coffee-table) 0)
 (= (distance side-table side-table) 0)
@@ -20,15 +20,16 @@ mustard-bottle soup-can - object)
 (= (distance pantry side-table) 10)
 (= (distance recycle-bin pantry) 10)
 (= (distance pantry recycle-bin) 10)
-(robot-at coffee-table)
-(at mustard-bottle coffee-table)
-(at soup-can side-table)
+(robot-at recycle-bin)
+(human-at coffee-table)
+(at mustard-bottle-one coffee-table)
+(at mustard-bottle-two pantry)
 (hand-empty)
 )
-(:goal
-(and
-(at mustard-bottle pantry)
-(at soup-can recycle-bin)
-)
-)
+(:goal (and
+    (or (at mustard-bottle-one side-table) (at mustard-bottle-two side-table))
+))
+(:constraints (and
+    (forall (?loc - location) (not (and (robot-at ?loc) (human-at ?loc))))
+))
 )
