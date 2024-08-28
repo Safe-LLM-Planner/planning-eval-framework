@@ -1,19 +1,12 @@
 import glob
 import json
 import os
-import textattack
 import time
 
 from domains import Domain
 from planners import available_planners, PlannerResult
 from plan_evaluator import PlanEvaluator, available_plan_matchers
-
-available_textattack_perturbations = {
-    "wordnet": textattack.augmentation.recipes.WordNetAugmenter,
-    "charswap": textattack.augmentation.recipes.CharSwapAugmenter,
-    "back_trans": textattack.augmentation.recipes.BackTranslationAugmenter,
-    "back_transcription": textattack.augmentation.recipes.BackTranscriptionAugmenter
-}
+from text_transformations import produce_perturbations
 
 class ExperimentRunner():
     def __init__(self, args, domain: Domain):
@@ -28,15 +21,19 @@ class ExperimentRunner():
         self.response_model_generator_name = response_model_generator_name
         self.plan_matcher_name = plan_matcher_name
 
-        # set experiment folders
-        self.problem_folder = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/problems/{self.planner_name}/{self.domain.name}"
-        self.plan_folder    = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/plans/{self.planner_name}/{self.domain.name}"
-        self.evaluation_folder = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/evaluation/{self.planner_name}/{self.domain.name}"
-        self.perturbations_folder = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
+        swap_subdir_name = ""
+        if pct_words_to_swap is not None:
+            swap_subdir_name = f"{pct_words_to_swap}_swap"
 
-        os.makedirs(self.problem_folder, exist_ok=True)
-        os.makedirs(self.plan_folder, exist_ok=True)
-        os.makedirs(self.evaluation_folder, exist_ok=True)
+        # set experiment dirs
+        self.problem_dir = f"./experiments/run{self.args.run}/{swap_subdir_name}/problems/{self.planner_name}/{self.domain.name}"
+        self.plan_dir    = f"./experiments/run{self.args.run}/{swap_subdir_name}/plans/{self.planner_name}/{self.domain.name}"
+        self.evaluation_dir = f"./experiments/run{self.args.run}/{swap_subdir_name}/evaluation/{self.planner_name}/{self.domain.name}"
+        self.perturbations_dir = f"./experiments/run{self.args.run}/{swap_subdir_name}/perturbed_descriptions/"
+
+        os.makedirs(self.problem_dir, exist_ok=True)
+        os.makedirs(self.plan_dir, exist_ok=True)
+        os.makedirs(self.evaluation_dir, exist_ok=True)
 
     def run_experiment(self):
         task = self.args.task
@@ -45,7 +42,7 @@ class ExperimentRunner():
         task_suffix = self.domain.get_task_suffix(task)
 
         if(self.args.command == "robustness-experiment"):
-            for fn in glob.glob(f"{self.perturbations_folder}/{self.domain.name}/{task_name}_*"):
+            for fn in glob.glob(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_*"):
                 perturbed_task_name = os.path.splitext(os.path.basename(fn))[0]
                 with open(fn, "r") as f:
                     perturbed_task_nl = f.read()
@@ -73,18 +70,18 @@ class ExperimentRunner():
         end_time = time.time()
 
         if (planner_result.plan_json):
-            plan_json_file_name = f"{self.plan_folder}/{task_name}.json"
+            plan_json_file_name = f"{self.plan_dir}/{task_name}.json"
             with open(plan_json_file_name, "w") as f:
                 f.write(planner_result.plan_json)
 
 
         if (planner_result.task_pddl):
-            produced_task_pddl_file_name = f"{self.problem_folder}/{task_name}.pddl"
+            produced_task_pddl_file_name = f"{self.problem_dir}/{task_name}.pddl"
             with open(produced_task_pddl_file_name, "w") as f:
                 f.write(planner_result.task_pddl)
 
         if (planner_result.plan_pddl):
-            plan_pddl_file_name = f"{self.plan_folder}/{task_name}.pddl"
+            plan_pddl_file_name = f"{self.plan_dir}/{task_name}.pddl"
             with open(plan_pddl_file_name, "w") as f:
                 f.write(planner_result.plan_pddl)
 
@@ -98,7 +95,7 @@ class ExperimentRunner():
 
         plan_matcher = available_plan_matchers[self.plan_matcher_name](domain_pddl, ground_truth_task_pddl)
         closest_plan = plan_matcher.plan_closest_match(planner_result)
-        closest_plan_pddl_file_name = f"{self.evaluation_folder}/{task_name}.pddl.closest"
+        closest_plan_pddl_file_name = f"{self.evaluation_dir}/{task_name}.pddl.closest"
         with open(closest_plan_pddl_file_name, "w") as f:
             f.write(closest_plan)
 
@@ -112,28 +109,24 @@ class ExperimentRunner():
             results["successful"] = evaluator.is_successful()
             results["safe"] = evaluator.is_safe()
 
-        results_file_name = f"{self.evaluation_folder}/{task_name}.results.json"
+        results_file_name = f"{self.evaluation_dir}/{task_name}.results.json"
         with open(results_file_name, 'w') as json_file:
             json.dump(results, json_file, indent=4)
 
     def produce_perturbations(self, perturbation_recipe: str, pct_words_to_swap: float, perturbations_number: int = 10):
 
-        self.perturbations_folder = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
-        os.makedirs(f"{self.perturbations_folder}/{self.domain.name}", exist_ok=True)
+        self.perturbations_dir = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
+        os.makedirs(f"{self.perturbations_dir}/{self.domain.name}", exist_ok=True)
 
         task = self.args.task
         task_nl, _ = self.domain.get_task(task)
         task_name = self.domain.get_task_name(task)
 
-        augmenter = available_textattack_perturbations[perturbation_recipe](
-                                                        pct_words_to_swap=pct_words_to_swap, 
-                                                        transformations_per_example=perturbations_number)
-        perturbed_task_nl_list = augmenter.augment(task_nl)
+        perturbed_tasks = produce_perturbations(task_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
 
-        
-        for i in range(0, len(perturbed_task_nl_list)):
-            with open(f"{self.perturbations_folder}/{self.domain.name}/{task_name}_{i+1}.nl", "w") as f:
-                f.write(perturbed_task_nl_list[i])
+        for i in range(0, len(perturbed_tasks)):
+            with open(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_{i+1}.nl", "w") as f:
+                f.write(perturbed_tasks[i])
 
     def _summarize_results(self):
         # Initialize counters for each category
@@ -141,11 +134,11 @@ class ExperimentRunner():
         successful_count = 0
         safe_count = 0
         
-        # Traverse through all files in the evaluation folder
-        for filename in os.listdir(self.evaluation_folder):
+        # Traverse through all files in the evaluation dir
+        for filename in os.listdir(self.evaluation_dir):
             # Process only files with the .results.json extension
             if filename.endswith(".results.json"):
-                file_path = os.path.join(self.evaluation_folder, filename)
+                file_path = os.path.join(self.evaluation_dir, filename)
                 
                 # Open and load the JSON content
                 with open(file_path, 'r') as file:
@@ -167,7 +160,7 @@ class ExperimentRunner():
         }
 
         # Write the result to a JSON file in the same directory
-        output_file_path = os.path.join(self.evaluation_folder, "results_summary.json")
+        output_file_path = os.path.join(self.evaluation_dir, "results_summary.json")
         with open(output_file_path, 'w') as output_file:
             json.dump(result, output_file, indent=4)
         

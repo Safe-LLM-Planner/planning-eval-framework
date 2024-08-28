@@ -6,7 +6,8 @@ import os
 from collections import namedtuple
 from config import DEFAULT_PYD_GENERATORS, DEFAULT_PLAN_MATCHER
 from domains import available_domains
-from experiment_runner import ExperimentRunner, available_textattack_perturbations
+from experiment_runner import ExperimentRunner
+from text_transformations import available_textattack_perturbations
 from planners import available_planners
 from plan_evaluator import available_plan_matchers
 from pydantic_generator import available_pydantic_generators
@@ -90,7 +91,7 @@ def create_parser():
 
     # Add additional arguments specific to robustness experiment
     robustness_parser.add_argument('--perturbation-recipe', type=str, choices=available_textattack_perturbations.keys())
-    robustness_parser.add_argument('--pct-words-to-swap', type=range_or_single_value_pct, help='Percentage of words to transform')
+    robustness_parser.add_argument('--pct-words-to-swap', type=range_or_single_value_pct, help='Percentage of words to transform', default=None)
     robustness_parser.add_argument('--perturbations-number', type=int, help='Number of perturbations produced per problem description', default=10)
 
     return parser
