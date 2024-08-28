@@ -2,11 +2,12 @@ import glob
 import json
 import os
 import time
+import text_transformations
 
 from domains import Domain
 from planners import available_planners, PlannerResult
 from plan_evaluator import PlanEvaluator, available_plan_matchers
-from text_transformations import produce_perturbations
+from typing import Literal
 
 class ExperimentRunner():
     def __init__(self, args, domain: Domain):
@@ -42,16 +43,35 @@ class ExperimentRunner():
         task_suffix = self.domain.get_task_suffix(task)
 
         if(self.args.command == "robustness-experiment"):
-            for fn in glob.glob(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_*"):
-                perturbed_task_name = os.path.splitext(os.path.basename(fn))[0]
-                with open(fn, "r") as f:
-                    perturbed_task_nl = f.read()
-                    produced_plan = self.run_planner(perturbed_task_nl, perturbed_task_name, task)
-                    self.run_evaluator(produced_plan, task, perturbed_task_name)
+            for perturbed_task_name, perturbed_task_nl in self._grab_perturbed_tasks(task_name).items():
+                produced_plan = self.run_planner(perturbed_task_nl, perturbed_task_name, task)
+                self.run_evaluator(produced_plan, task, perturbed_task_name)
             self._summarize_results()
         else:
             planner_result: PlannerResult = self.run_planner(task_nl, task_name, task)
             self.run_evaluator(planner_result, task, task_name)
+
+    def _grab_perturbed_tasks(self, task_name):
+        perturbed_tasks_nl = {}
+        for init_fn in glob.glob(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_*.init.nl"):
+            perturbed_task_name = os.path.basename(init_fn).rpartition('.init.nl')[0]
+            goal_fn = init_fn.replace(".init.nl", ".goal.nl")
+            constraints_fn = init_fn.replace(".init.nl", ".constraints.nl")
+
+            if not os.path.exists(goal_fn):
+                raise RuntimeError(f"Goal file not present for perturbed problem {perturbed_task_name} of domain {self.name}")
+            elif not os.path.exists(constraints_fn):
+                raise RuntimeError(f"Constraints file not present for perturbed problem {perturbed_task_name} of domain {self.name}")
+            else:
+                with open(init_fn, "r") as f:
+                    init_nl = f.read()
+                with open(goal_fn, "r") as f:
+                    goal_nl = f.read()
+                with open(constraints_fn, "r") as f:
+                    constraints_nl = f.read()
+                task_nl = "\n".join([init_nl, goal_nl, constraints_nl])
+                perturbed_tasks_nl[perturbed_task_name] = task_nl
+        return perturbed_tasks_nl
 
     def run_planner(self, task_nl, task_name, task):
 
@@ -113,20 +133,39 @@ class ExperimentRunner():
         with open(results_file_name, 'w') as json_file:
             json.dump(results, json_file, indent=4)
 
-    def produce_perturbations(self, perturbation_recipe: str, pct_words_to_swap: float, perturbations_number: int = 10):
+    def produce_perturbations(self, perturbation_recipe: str, 
+                                    pct_words_to_swap: float, 
+                                    perturbations_number: int = 10,
+                                    perturbation_targets: list[Literal["init", "goal", "constraints"]] = ["init", "goal", "constraints"]
+                                    ):
 
         self.perturbations_dir = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
         os.makedirs(f"{self.perturbations_dir}/{self.domain.name}", exist_ok=True)
 
-        task = self.args.task
-        task_nl, _ = self.domain.get_task(task)
-        task_name = self.domain.get_task_name(task)
+        task_number = self.args.task
+        task_name = self.domain.get_task_name(task_number)
 
-        perturbed_tasks = produce_perturbations(task_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+        perturbed_tasks = {}
+        task_init_nl = self.domain.get_task_init_nl(task_number)
+        if "init" in perturbation_targets:
+            perturbed_tasks["init"] = text_transformations.produce_perturbations(task_init_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+        else:
+            perturbed_tasks["init"] = [task_init_nl] * perturbations_number
+        task_goal_nl = self.domain.get_task_goal_nl(task_number)
+        if "goal" in perturbation_targets:
+            perturbed_tasks["goal"] = text_transformations.produce_perturbations(task_goal_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+        else:
+            perturbed_tasks["goal"] = [task_goal_nl] * perturbations_number
+        task_constraints_nl = self.domain.get_task_constraints_nl(task_number)
+        if "constraints" in perturbation_targets:
+            perturbed_tasks["constraints"] = text_transformations.produce_perturbations(task_constraints_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+        else:
+            perturbed_tasks["constraints"] = [task_constraints_nl] * perturbations_number
 
-        for i in range(0, len(perturbed_tasks)):
-            with open(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_{i+1}.nl", "w") as f:
-                f.write(perturbed_tasks[i])
+        for component_name in perturbed_tasks:
+            for i in range(0, len(perturbed_tasks[component_name])):
+                with open(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_{i+1}.{component_name}.nl", "w") as f:
+                    f.write(perturbed_tasks[component_name][i])
 
     def _summarize_results(self):
         # Initialize counters for each category

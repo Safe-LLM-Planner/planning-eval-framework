@@ -8,29 +8,59 @@ from utils import postprocess
 #
 ###############################################################################
 
+class Task:
+    def __init__(self, name: str):
+        self.name = name
+
+    def get_init_filename(self):
+        return f"{self.name}.init.nl"
+
+    def get_goal_filename(self):
+        return f"{self.name}.goal.nl"
+
+    def get_constraints_filename(self):
+        return f"{self.name}.constraints.nl"
+
+    def get_ground_truth_pddl_filename(self):
+        return f"{self.name}.pddl"
+
+class Context(Task):
+    def get_ground_truth_plan_nl_file(self):
+        return f"{self.name}.sol"
+
 class Domain:
     def __init__(self):
         # every domain should contain the context as in "in-context learning" (ICL)
         # which are the example problem in natural language.
         # For instance, in our case, context is:
-        # 1. p_example.nl  (a language description of the problem)
-        # 2. p_example.pddl (the ground-truth problem pddl for the problem)
-        # 3. p_example.sol  (the ground-truth solution in natural language to the problem)
-        self.context = ("p_example.nl", "p_example.pddl", "p_example.sol")
-        self.tasks: list[tuple[str,str]] = [] # should be list of tuples like (descritpion file, ground_truth_pddl file)
+        # - p_example.init.nl  (a language description of the problem's initial state)
+        # - p_example.goal.nl  (a language description of the problem's goal)
+        # - p_example.constraints.nl  (a language description of the problem's constraints)
+        # - p_example.pddl (the ground-truth problem pddl for the problem)
+        # - p_example.sol  (the ground-truth solution in natural language to the problem)
+        self.context = Context("p_example")
+        self.tasks: list[Task] = []
+        self.domain_dir = f"./domains/{self.name}/"
 
         self.grab_tasks()
 
     def grab_tasks(self):
         path = f"./domains/{self.name}"
-        nls = []
-        for fn in glob.glob(f"{path}/*.nl"):
-            fn_ = fn.split("/")[-1]
-            if "domain" not in fn_ and "p_example" not in fn_:
-                if os.path.exists(fn.replace("nl", "pddl")):
-                    nls.append(fn_)
-        sorted_nls = sorted(nls)
-        self.tasks = [(nl, nl.replace("nl", "pddl")) for nl in sorted_nls]
+        problem_name_list = []
+        for fn in glob.glob(f"{path}/*.init.nl"):
+            file_base_name = os.path.basename(fn)
+            problem_name = file_base_name.rpartition('.init.nl')[0]
+            if "domain" not in problem_name and "p_example" not in problem_name:
+                if not os.path.exists(fn.replace(".init.nl", ".goal.nl")):
+                    raise RuntimeError(f"Goal file not present for problem {problem_name} of domain {self.name}")
+                elif not os.path.exists(fn.replace(".init.nl", ".constraints.nl")):
+                    raise RuntimeError(f"Constraints file not present for problem {problem_name} of domain {self.name}")
+                elif not os.path.exists(fn.replace(".init.nl", ".pddl")):
+                    raise RuntimeError(f"Ground truth PDDL file not present for problem {problem_name} of domain {self.name}")
+                else:
+                    problem_name_list.append(problem_name)
+        problem_name_list = sorted(problem_name_list)
+        self.tasks = [Task(p_name) for p_name in problem_name_list]
 
     def __len__(self):
         return len(self.tasks)
@@ -38,35 +68,67 @@ class Domain:
     # task number i is a 1-based index
 
     def get_task_name(self, i) -> str:
-        nl, _ = self.tasks[i-1]
-        return os.path.splitext(nl)[0]
+        return self.tasks[i-1].name
 
     def get_task_suffix(self, i) -> str:
-        nl, pddl = self.tasks[i-1]
+        pddl = self.tasks[i-1].get_ground_truth_pddl_filename()
         return f"{self.name}/{pddl}"
 
-    def get_task_file(self, i) -> str:
-        nl, pddl = self.tasks[i-1]
-        return f"./domains/{self.name}/{nl}", f"./domains/{self.name}/{pddl}"
+    def get_task_init_nl(self, i):
+        init_nl_f = self.tasks[i-1].get_init_filename()
+        with open(os.path.join(self.domain_dir, init_nl_f), 'r') as f:
+            init_nl = f.read()
+        
+        return postprocess(init_nl)
+
+    def get_task_goal_nl(self, i):
+        goal_nl_f = self.tasks[i-1].get_goal_filename()
+        with open(os.path.join(self.domain_dir, goal_nl_f), 'r') as f:
+            goal_nl = f.read()
+        
+        return postprocess(goal_nl)
+
+    def get_task_constraints_nl(self, i):
+        constraints_nl_f = self.tasks[i-1].get_constraints_filename()
+        with open(os.path.join(self.domain_dir, constraints_nl_f), 'r') as f:
+            constraints_nl = f.read()
+        
+        return postprocess(constraints_nl)
+
+    def get_task_pddl(self, i):
+        pddl_f = self.tasks[i-1].get_ground_truth_pddl_filename()
+        with open(os.path.join(self.domain_dir, pddl_f), 'r') as f:
+            pddl = f.read()
+        
+        return postprocess(pddl)
 
     def get_task(self, i):
-        nl_f, pddl_f = self.get_task_file(i)
-        with open(nl_f, 'r') as f:
-            nl = f.read()
-        with open(pddl_f, 'r') as f:
-            pddl = f.read()
-        return postprocess(nl), postprocess(pddl)
+        init_nl = self.get_task_init_nl(i)
+        goal_nl = self.get_task_goal_nl(i)
+        constraints_nl = self.get_task_constraints_nl(i)
+        pddl = self.get_task_pddl(i)
+        nl = "\n".join([init_nl, goal_nl, constraints_nl])
+
+        return nl, pddl
 
     def get_context(self):
-        nl_f   = f"./domains/{self.name}/{self.context[0]}"
-        pddl_f = f"./domains/{self.name}/{self.context[1]}"
-        sol_f  = f"./domains/{self.name}/{self.context[2]}"
-        with open(nl_f, 'r') as f:
-            nl   = f.read()
-        with open(pddl_f, 'r') as f:
+        init_nl_f = self.context.get_init_filename()
+        goal_nl_f = self.context.get_goal_filename()
+        constraints_nl_f = self.context.get_constraints_filename()
+        pddl_f = self.context.get_ground_truth_pddl_filename()
+        sol_f = self.context.get_ground_truth_plan_nl_file()
+
+        with open(os.path.join(self.domain_dir, init_nl_f), 'r') as f:
+            init_nl = f.read()
+        with open(os.path.join(self.domain_dir, goal_nl_f), 'r') as f:
+            goal_nl = f.read()
+        with open(os.path.join(self.domain_dir, constraints_nl_f), 'r') as f:
+            constraints_nl = f.read()
+        with open(os.path.join(self.domain_dir, pddl_f), 'r') as f:
             pddl = f.read()
-        with open(sol_f, 'r') as f:
-            sol  = f.read()
+        with open(os.path.join(self.domain_dir, sol_f), 'r') as f:
+            sol = f.read()
+        nl = "\n".join([init_nl, goal_nl, constraints_nl])
         return postprocess(nl), postprocess(pddl), postprocess(sol)
 
     def get_domain_pddl(self):
@@ -76,7 +138,7 @@ class Domain:
         return postprocess(domain_pddl)
 
     def get_domain_pddl_file(self):
-        domain_pddl_f = f"./domains/{self.name}/domain.pddl"
+        domain_pddl_f = f"{self.domain_dir}/domain.pddl"
         return domain_pddl_f
 
     def get_domain_nl(self):
@@ -89,7 +151,7 @@ class Domain:
         return postprocess(domain_nl)
 
     def get_domain_nl_file(self):
-        domain_nl_f = f"./domains/{self.name}/domain.nl"
+        domain_nl_f = f"{self.domain_dir}/domain.nl"
         return domain_nl_f
 
 

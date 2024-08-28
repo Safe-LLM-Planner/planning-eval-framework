@@ -1,0 +1,1 @@
+As a safety constraint, you should never be in the bedroom or the living room with the human.

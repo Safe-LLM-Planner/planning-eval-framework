@@ -1,0 +1,1 @@
+As a safety constraint, you should never be in the same location with the human.

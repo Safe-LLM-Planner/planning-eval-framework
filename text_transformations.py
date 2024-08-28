@@ -12,7 +12,7 @@ available_textattack_perturbations = {
 word_level_transformations = {"wordnet", "charswap", "embedding"}
 sentence_level_transformations = {"back_trans", "back_transcription"}
 
-def produce_perturbations(task_nl, perturbation_recipe, pct_words_to_swap, perturbations_number):
+def produce_perturbations(task_nl, perturbation_recipe, pct_words_to_swap, perturbations_number) -> list[str]:
     augmenter = available_textattack_perturbations[perturbation_recipe](
                                                 pct_words_to_swap=pct_words_to_swap, 
                                                 transformations_per_example=perturbations_number)
