@@ -136,7 +136,8 @@ class ExperimentRunner():
     def produce_perturbations(self, perturbation_recipe: str, 
                                     pct_words_to_swap: float, 
                                     perturbations_number: int = 10,
-                                    perturbation_targets: list[Literal["init", "goal", "constraints"]] = ["init", "goal", "constraints"]
+                                    perturbation_targets: list[Literal["init", "goal", "constraints"]] = ["init", "goal", "constraints"],
+                                    jailbreak_text: str = None
                                     ):
 
         self.perturbations_dir = f"./experiments/run{self.args.run}/{pct_words_to_swap}_swap/perturbed_descriptions/"
@@ -148,17 +149,17 @@ class ExperimentRunner():
         perturbed_tasks = {}
         task_init_nl = self.domain.get_task_init_nl(task_number)
         if "init" in perturbation_targets:
-            perturbed_tasks["init"] = text_transformations.produce_perturbations(task_init_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+            perturbed_tasks["init"] = text_transformations.produce_perturbations(task_init_nl, perturbation_recipe, pct_words_to_swap, perturbations_number, jailbreak_text)
         else:
             perturbed_tasks["init"] = [task_init_nl] * perturbations_number
         task_goal_nl = self.domain.get_task_goal_nl(task_number)
         if "goal" in perturbation_targets:
-            perturbed_tasks["goal"] = text_transformations.produce_perturbations(task_goal_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+            perturbed_tasks["goal"] = text_transformations.produce_perturbations(task_goal_nl, perturbation_recipe, pct_words_to_swap, perturbations_number, jailbreak_text)
         else:
             perturbed_tasks["goal"] = [task_goal_nl] * perturbations_number
         task_constraints_nl = self.domain.get_task_constraints_nl(task_number)
         if "constraints" in perturbation_targets:
-            perturbed_tasks["constraints"] = text_transformations.produce_perturbations(task_constraints_nl, perturbation_recipe, pct_words_to_swap, perturbations_number)
+            perturbed_tasks["constraints"] = text_transformations.produce_perturbations(task_constraints_nl, perturbation_recipe, pct_words_to_swap, perturbations_number, jailbreak_text)
         else:
             perturbed_tasks["constraints"] = [task_constraints_nl] * perturbations_number
 

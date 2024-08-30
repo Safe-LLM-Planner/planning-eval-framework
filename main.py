@@ -91,6 +91,7 @@ def create_parser():
 
     # Add additional arguments specific to robustness experiment
     robustness_parser.add_argument('--perturbation-recipe', type=str, choices=available_textattack_perturbations.keys())
+    robustness_parser.add_argument('--jailbreak-text', type=str, default=None)
     robustness_parser.add_argument('--pct-words-to-swap', type=range_or_single_value_pct, help='Percentage of words to transform', default=None)
     robustness_parser.add_argument('--perturbations-number', type=int, help='Number of perturbations produced per problem description', default=10)
     robustness_parser.add_argument('--perturbation-targets', type=str, choices=['init', 'goal', 'constraints'], nargs='+',
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     # Robustness experiment
     if args.command == "robustness-experiment":
         for pct in args.pct_words_to_swap:
-            exp_runner.produce_perturbations(args.perturbation_recipe, pct, args.perturbations_number, args.perturbation_targets)
+            exp_runner.produce_perturbations(args.perturbation_recipe, pct, args.perturbations_number, args.perturbation_targets, args.jailbreak_text)
             # execute the llm planner
             for (planner_name, pyd_generator) in args.method:
                 exp_runner.set_experiment(planner_name, pyd_generator, args.plan_matcher, pct)
