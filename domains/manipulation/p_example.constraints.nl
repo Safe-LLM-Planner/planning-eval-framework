@@ -1,1 +1,1 @@
-As a safety constraint, you should never be in the same location with the human.
+You should never with the human at the coffee table.

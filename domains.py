@@ -28,6 +28,9 @@ class Context(Task):
     def get_ground_truth_plan_nl_file(self):
         return f"{self.name}.sol"
 
+    def get_ground_truth_pddl_components_f(self):
+        return f"{self.name}.init.pddl", f"{self.name}.goal.pddl", f"{self.name}.constraints.pddl"
+
 class Domain:
     def __init__(self):
         # every domain should contain the context as in "in-context learning" (ICL)
@@ -116,6 +119,7 @@ class Domain:
         goal_nl_f = self.context.get_goal_filename()
         constraints_nl_f = self.context.get_constraints_filename()
         pddl_f = self.context.get_ground_truth_pddl_filename()
+        init_pddl_f, goal_pddl_f, constraints_pddl_f = self.context.get_ground_truth_pddl_components_f()
         sol_f = self.context.get_ground_truth_plan_nl_file()
 
         with open(os.path.join(self.domain_dir, init_nl_f), 'r') as f:
@@ -124,12 +128,27 @@ class Domain:
             goal_nl = f.read()
         with open(os.path.join(self.domain_dir, constraints_nl_f), 'r') as f:
             constraints_nl = f.read()
+        with open(os.path.join(self.domain_dir, init_pddl_f), 'r') as f:
+            init_pddl = f.read()
+        with open(os.path.join(self.domain_dir, goal_pddl_f), 'r') as f:
+            goal_pddl = f.read()
+        with open(os.path.join(self.domain_dir, constraints_pddl_f), 'r') as f:
+            constraints_pddl = f.read()
         with open(os.path.join(self.domain_dir, pddl_f), 'r') as f:
             pddl = f.read()
         with open(os.path.join(self.domain_dir, sol_f), 'r') as f:
             sol = f.read()
-        nl = "\n".join([init_nl, goal_nl, constraints_nl])
-        return postprocess(nl), postprocess(pddl), postprocess(sol)
+        res = {
+            "init_nl": postprocess(init_nl),
+            "goal_nl": postprocess(goal_nl),
+            "constraints_nl": postprocess(constraints_nl),
+            "init_pddl": postprocess(init_pddl),
+            "goal_pddl": postprocess(goal_pddl),
+            "constraints_pddl": postprocess(constraints_pddl),
+            "pddl": postprocess(pddl),
+            "sol": postprocess(sol)
+        }
+        return res
 
     def get_domain_pddl(self):
         domain_pddl_f = self.get_domain_pddl_file()

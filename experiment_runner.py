@@ -38,21 +38,24 @@ class ExperimentRunner():
 
     def run_experiment(self):
         task = self.args.task
+        init_nl = self.domain.get_task_init_nl(task)
+        goal_nl = self.domain.get_task_goal_nl(task)
+        constraints_nl = self.domain.get_task_constraints_nl(task)
         task_nl, _ = self.domain.get_task(task) 
         task_name = self.domain.get_task_name(task)
         task_suffix = self.domain.get_task_suffix(task)
 
         if(self.args.command == "robustness-experiment"):
-            for perturbed_task_name, perturbed_task_nl in self._grab_perturbed_tasks(task_name).items():
-                produced_plan = self.run_planner(perturbed_task_nl, perturbed_task_name, task)
+            for perturbed_task_name, perturbed_task in self._grab_perturbed_tasks(task_name).items():
+                produced_plan: PlannerResult = self.run_planner(perturbed_task["init_nl"], perturbed_task["goal_nl"], perturbed_task["constraints_nl"], perturbed_task_name, task)
                 self.run_evaluator(produced_plan, task, perturbed_task_name)
             self._summarize_results()
         else:
-            planner_result: PlannerResult = self.run_planner(task_nl, task_name, task)
+            planner_result: PlannerResult = self.run_planner(init_nl, goal_nl, constraints_nl, task_name, task)
             self.run_evaluator(planner_result, task, task_name)
 
     def _grab_perturbed_tasks(self, task_name):
-        perturbed_tasks_nl = {}
+        perturbed_tasks = {}
         for init_fn in glob.glob(f"{self.perturbations_dir}/{self.domain.name}/{task_name}_*.init.nl"):
             perturbed_task_name = os.path.basename(init_fn).rpartition('.init.nl')[0]
             goal_fn = init_fn.replace(".init.nl", ".goal.nl")
@@ -69,11 +72,14 @@ class ExperimentRunner():
                     goal_nl = f.read()
                 with open(constraints_fn, "r") as f:
                     constraints_nl = f.read()
-                task_nl = "\n".join([init_nl, goal_nl, constraints_nl])
-                perturbed_tasks_nl[perturbed_task_name] = task_nl
-        return perturbed_tasks_nl
+                perturbed_tasks[perturbed_task_name] = {
+                    "init_nl": init_nl,
+                    "goal_nl": goal_nl,
+                    "constraints_nl": constraints_nl
+                }
+        return perturbed_tasks
 
-    def run_planner(self, task_nl, task_name, task):
+    def run_planner(self, init_nl, goal_nl, constraints_nl, task_name, task):
 
         # get domain, task and planner information
         context = self.domain.get_context()
@@ -83,24 +89,23 @@ class ExperimentRunner():
 
         start_time = time.time()
 
-        planner.set_context(context)
+        planner.set_context(context, self.domain.name, task_name)
         planner.set_response_model_generator(self.response_model_generator_name)
-        planner_result = planner.run_planner(task_nl, domain_nl, domain_pddl)
+        planner_result = planner.run_planner(init_nl, goal_nl, constraints_nl, domain_nl, domain_pddl)
 
         end_time = time.time()
 
-        if (planner_result.plan_json):
+        if (planner_result.plan_json is not None):
             plan_json_file_name = f"{self.plan_dir}/{task_name}.json"
             with open(plan_json_file_name, "w") as f:
                 f.write(planner_result.plan_json)
 
-
-        if (planner_result.task_pddl):
+        if (planner_result.task_pddl is not None):
             produced_task_pddl_file_name = f"{self.problem_dir}/{task_name}.pddl"
             with open(produced_task_pddl_file_name, "w") as f:
                 f.write(planner_result.task_pddl)
 
-        if (planner_result.plan_pddl):
+        if (planner_result.plan_pddl is not None):
             plan_pddl_file_name = f"{self.plan_dir}/{task_name}.pddl"
             with open(plan_pddl_file_name, "w") as f:
                 f.write(planner_result.plan_pddl)
