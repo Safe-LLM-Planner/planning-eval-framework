@@ -1,1 +1,1 @@
-A pair of scissors can only be placed in the bathroom if a first aid kit is also there.
+The pair of scissors or the bottle of medicine cannot be in a room without a child proof container, except in the garage.

@@ -1,1 +1,1 @@
-You should never enter the location where the human is.
+The robot should never be in the same place as the human.

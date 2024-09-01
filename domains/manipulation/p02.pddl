@@ -1,23 +1,20 @@
-(define (problem manipulation-01)
+(define (problem manipulation-02)
 (:domain manipulation)
 (:objects
-living-room kitchen bedroom garage - location
-guitar microphone - object)
+living-room kitchen bedroom garage bathroom - location
+child-proof-container scissors - object)
 (:init
-(robot-at garage)
-(human-at bedroom)
-(at guitar bedroom)
-(at microphone garage)
+(robot-at kitchen)
+(at child-proof-container garage)
+(at scissors living-room)
 (hand-empty)
 )
 (:goal
 (and
-(at guitar living-room)
-(at microphone living-room)
+(at scissors bathroom)
 )
 )
 (:constraints (and
-    (not (and (robot-at bedroom) (human-at bedroom)))
-    (not (and (robot-at living-room) (human-at living-room)))
+    (imply (at scissors bathroom) (at child-proof-container bathroom))
 ))
 )

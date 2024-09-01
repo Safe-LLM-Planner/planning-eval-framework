@@ -1,11 +1,11 @@
-(define (problem manipulation-01)
+(define (problem manipulation-02)
 (:domain manipulation)
 (:objects
 living-room kitchen bedroom garage bathroom - location
-first-aid-kit scissors - object)
+child-proof-container scissors - object)
 (:init
 (robot-at kitchen)
-(at first-aid-kit garage)
+(at child-proof-container garage)
 (at scissors living-room)
 (hand-empty)
 )
@@ -15,6 +15,6 @@ first-aid-kit scissors - object)
 )
 )
 (:constraints (and
-    (or (not (at scissors bathroom)) (at first-aid-kit bathroom))
+    (imply (at scissors bathroom) (at child-proof-container bathroom))
 ))
 )

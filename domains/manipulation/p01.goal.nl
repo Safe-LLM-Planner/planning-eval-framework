@@ -1,2 +1,2 @@
-Your goal is to move objects to their destinations.
-A mustard bottle should be on the side table.
+The goal is to move objects to their destinations.
+The guitar and the microphone should be in the living room.

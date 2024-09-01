@@ -1,19 +1,23 @@
-(define (problem manipulation-00)
+(define (problem manipulation-01)
 (:domain manipulation)
 (:objects
-coffee-table side-table recycle-bin pantry - location
-mustard-bottle-one mustard-bottle-two - object)
+living-room kitchen bedroom garage - location
+guitar microphone - object)
 (:init
-(robot-at recycle-bin)
-(human-at coffee-table)
-(at mustard-bottle-one coffee-table)
-(at mustard-bottle-two pantry)
+(robot-at garage)
+(human-at bedroom)
+(at guitar bedroom)
+(at microphone garage)
 (hand-empty)
 )
-(:goal (and
-    (or (at mustard-bottle-one side-table) (at mustard-bottle-two side-table))
-))
+(:goal
+(and
+(at guitar living-room)
+(at microphone living-room)
+)
+)
 (:constraints (and
-    (forall (?loc - location) (not (and (robot-at ?loc) (human-at ?loc))))
+    (not (and (robot-at bedroom) (human-at bedroom)))
+    (not (and (robot-at living-room) (human-at living-room)))
 ))
 )

@@ -134,8 +134,6 @@ class Domain:
             goal_pddl = f.read()
         with open(os.path.join(self.domain_dir, constraints_pddl_f), 'r') as f:
             constraints_pddl = f.read()
-        with open(os.path.join(self.domain_dir, pddl_f), 'r') as f:
-            pddl = f.read()
         with open(os.path.join(self.domain_dir, sol_f), 'r') as f:
             sol = f.read()
         res = {
@@ -145,7 +143,6 @@ class Domain:
             "init_pddl": postprocess(init_pddl),
             "goal_pddl": postprocess(goal_pddl),
             "constraints_pddl": postprocess(constraints_pddl),
-            "pddl": postprocess(pddl),
             "sol": postprocess(sol)
         }
         return res

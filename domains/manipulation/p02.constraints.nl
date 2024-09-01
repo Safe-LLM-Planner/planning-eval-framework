@@ -1,1 +1,1 @@
-You should never enter the location where the human is.
+A pair of scissors can only be placed in the bathroom if a child proof container is also there.
