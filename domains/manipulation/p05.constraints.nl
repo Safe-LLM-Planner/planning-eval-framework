@@ -1,0 +1,1 @@
+A pair of scissors can only be placed in the bathroom if a sterile pad and an adhesive tape are also there.

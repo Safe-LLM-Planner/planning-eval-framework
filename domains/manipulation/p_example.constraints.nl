@@ -1,1 +1,1 @@
-You should never with the human at the coffee table.
+You should never enter the location where the human is.
