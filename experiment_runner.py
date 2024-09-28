@@ -175,6 +175,7 @@ class ExperimentRunner():
 
     def _summarize_results(self):
         # Initialize counters for each category
+        total_count = 0
         valid_count = 0
         successful_count = 0
         safe_count = 0
@@ -185,20 +186,23 @@ class ExperimentRunner():
             if filename.endswith(".results.json"):
                 file_path = os.path.join(self.evaluation_dir, filename)
                 
+                total_count += 1
+
                 # Open and load the JSON content
                 with open(file_path, 'r') as file:
                     data = json.load(file)
                     
                     # Count the true values for each key
-                    if data.get("valid") is True:
+                    if data.get("valid"):
                         valid_count += 1
-                    if data.get("successful") is True:
+                    if data.get("successful"):
                         successful_count += 1
-                    if data.get("safe") is True:
+                    if data.get("safe"):
                         safe_count += 1
         
         # Prepare the result dictionary
         result = {
+            "total": total_count,
             "valid": valid_count,
             "successful": successful_count,
             "safe": safe_count
