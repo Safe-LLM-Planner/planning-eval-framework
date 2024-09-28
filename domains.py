@@ -196,12 +196,12 @@ class Manipulation(Domain):
     name = "manipulation" # this should match the directory name
 
 available_domains = {
-    "barman": Barman(),
-    "blocksworld": Blocksworld(),
-    "floortile": Floortile(),
-    "grippers": Grippers(),
-    "storage": Storage(),
-    "termes": Termes(),
-    "tyreworld": Tyreworld(),
+    # "barman": Barman(),
+    # "blocksworld": Blocksworld(),
+    # "floortile": Floortile(),
+    # "grippers": Grippers(),
+    # "storage": Storage(),
+    # "termes": Termes(),
+    # "tyreworld": Tyreworld(),
     "manipulation": Manipulation()
 }

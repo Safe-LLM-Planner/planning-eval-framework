@@ -70,7 +70,7 @@ def create_common_args():
     common_group = common_args.add_argument_group('common arguments')
     common_group.add_argument('--domain', type=str, choices=available_domains.keys())
     common_group.add_argument('--plan-matcher', type=str, choices=available_plan_matchers.keys(), default=DEFAULT_PLAN_MATCHER)
-    common_group.add_argument('--time-limit', type=int, default=200)
+    # common_group.add_argument('--time-limit', type=int, default=200)
     common_group.add_argument('--task', type=positive_int, )
     common_group.add_argument('--run', type=int, default=-1)
     common_group.add_argument('--method', type=method_tuple, nargs="+", help=method_tuple_help_text)
