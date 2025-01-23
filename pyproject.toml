@@ -1,0 +1,36 @@
+[project]
+name = "planning-eval-framework"
+version = "0.0.1"
+authors = [
+  { name="Agustin Martinez Sune" },
+]
+description = "Framework for safety evaluations over LLMs and automated symbolic planners"
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = { file = "LICENSE" }
+dependencies = [
+  "textattack",
+  "nltk",
+  "juliacall",
+  "sentence-transformers"
+]
+
+[project.urls]
+Homepage = "https://github.com/Safe-LLM-Planner/planning-eval-framework"
+
+[project.scripts]
+planning-eval = "planning_eval_framework.app:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+planning_eval_framework = ["domains/**/*"]

@@ -1,16 +1,15 @@
 import juliacall
-
 import argparse
 import os
-
 from collections import namedtuple
-from config import DEFAULT_PYD_GENERATORS, DEFAULT_PLAN_MATCHER
-from domains import available_domains
-from experiment_runner import ExperimentRunner
-from text_transformations import available_textattack_perturbations
-from planners import available_planners
-from plan_evaluator import available_plan_matchers
-from pydantic_generator import available_pydantic_generators
+
+from .config import DEFAULT_PYD_GENERATORS, DEFAULT_PLAN_MATCHER
+from .domains import available_domains
+from .experiment_runner import ExperimentRunner
+from .text_transformations import available_textattack_perturbations
+from llm_planners.planners import available_planners
+from .plan_evaluator import available_plan_matchers
+from llm_planners.pydantic_generator import available_pydantic_generators
 
 PlannerPydModelTuple = namedtuple("PlannerPydModelTuple", ["planner", "pyd_gen"])
 
@@ -128,7 +127,7 @@ def find_next_missing_run(directory):
     
     return next_run
 
-if __name__ == "__main__":
+def main():
 
     parser = create_parser()
     args = parser.parse_args()

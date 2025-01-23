@@ -1,6 +1,6 @@
 import glob
 import os
-from utils import postprocess
+from .utils import postprocess
 
 ###############################################################################
 #

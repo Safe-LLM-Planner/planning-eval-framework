@@ -1,9 +1,8 @@
 import json
-
 from juliacall import Main as jl
-from planners import PlannerResult
 from sentence_transformers import SentenceTransformer
-from utils import openai_client
+
+from llm_planners.planners import PlannerResult
 
 word_embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 

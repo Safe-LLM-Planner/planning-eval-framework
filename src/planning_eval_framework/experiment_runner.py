@@ -2,12 +2,12 @@ import glob
 import json
 import os
 import time
-import text_transformations
-
-from domains import Domain
-from planners import available_planners, PlannerResult
-from plan_evaluator import PlanEvaluator, available_plan_matchers
 from typing import Literal
+
+from . import text_transformations
+from .domains import Domain
+from llm_planners.planners import available_planners, PlannerResult
+from .plan_evaluator import PlanEvaluator, available_plan_matchers
 
 class ExperimentRunner():
     def __init__(self, args, domain: Domain):
