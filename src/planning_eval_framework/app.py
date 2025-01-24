@@ -78,7 +78,7 @@ def create_common_args():
 def create_parser():
     common_args = create_common_args()
     
-    parser = argparse.ArgumentParser(description="LLM-Planner", parents=[common_args])
+    parser = argparse.ArgumentParser(description="Planning-eval", parents=[common_args])
     
     # Create subparsers
     subparsers = parser.add_subparsers(dest='command')
