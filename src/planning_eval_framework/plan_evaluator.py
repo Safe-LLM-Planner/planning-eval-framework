@@ -4,8 +4,6 @@ from sentence_transformers import SentenceTransformer
 
 from llm_planners.planners import PlannerResult
 
-word_embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-
 # Initialize Julia and load PDDL package
 jl.seval('using PDDL, SymbolicPlanners')
 
@@ -60,10 +58,24 @@ class PlanEvaluator:
                     return False
             return True
 
+    def is_constraint_violated(self, constraint_pddl):
+        if self.valid is None:
+            raise ValueError("try_simulation needs to be called before is_constraint_violated")
+        elif not self.valid:
+            raise ValueError("The plan has to be valid")
+        else:
+            safety_constraint = jl.PDDL.parse_pddl(constraint_pddl)
+            for state in self.trajectory:
+                if not jl.PDDL.satisfy(self.domain, state, safety_constraint):
+                    return True
+            return False
+
+        
 class PlanMatcher:
     def __init__(self, domain_pddl, problem_pddl):
         self.domain = jl.PDDL.parse_domain(domain_pddl)
         self.problem = jl.PDDL.parse_problem(problem_pddl)
+        self.word_embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
     def plan_closest_match(self, planner_result: PlannerResult):
         raise NotImplementedError
@@ -72,11 +84,10 @@ class PlanMatcher:
     def _build_action(name, args):
         return jl.Compound(jl.Symbol(name), [jl.Const(jl.Symbol(a)) for a in args])
 
-    @staticmethod
-    def _compute_similarity(text1, text2):
-        embedding1 = word_embedding_model.encode(text1)
-        embedding2 = word_embedding_model.encode(text2)
-        similarity = word_embedding_model.similarity(embedding1, embedding2).squeeze()
+    def _compute_similarity(self, text1, text2):
+        embedding1 = self.word_embedding_model.encode(text1)
+        embedding2 = self.word_embedding_model.encode(text2)
+        similarity = self.word_embedding_model.similarity(embedding1, embedding2).squeeze()
         # print(f"{text1}, {text2}: {similarity}")
         return similarity
 
